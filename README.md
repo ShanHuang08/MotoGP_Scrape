@@ -52,6 +52,9 @@ python main.py --limit 10 --output-dir reports
 # Output as Markdown (.md) instead of HTML (.html)
 python main.py --limit 10 --format markdown
 
+# Disable auto-organization into race weekend folders
+python main.py --limit 10 --no-organize
+
 # Markdown output with other options combined
 python main.py --limit 5 --format markdown --skip-articles --output-dir reports
 ```
@@ -65,6 +68,8 @@ python main.py --limit 5 --format markdown --skip-articles --output-dir reports
 ```
 main.py（入口）
   → cli.py（命令列介面，解析參數 + 組報告 + 存檔）
+    → report_organizer.py（根據行事曆自動收納報告到比賽資料夾）
+      → calendar_data.py（2026 MotoGP 22 站賽程行事曆）
     → runner.py（MotoGPScraper 主控制器，指揮所有模組）
       → sources.py（去各個新聞網站「發現」新聞列表）
         → config.py（儲存新聞來源的設定：URL、XPath、時區等）
@@ -91,6 +96,8 @@ main.py（入口）
 | `reporter.py` | 排版印刷廠（把 Markdown 報告轉成漂亮 HTML 或純 .md 檔 + 開瀏覽器） |
 | `datetime_utils.py` | 時鐘（解析各種日期格式 + 統一轉成 UTC+8） |
 | `models.py` | 資料的容器（定義新聞和文章長什麼樣） |
+| `calendar_data.py` | 賽事行事曆（2026 年 22 站比賽日期和名稱） |
+| `report_organizer.py` | 收納管家（根據行事曆自動將報告歸類到比賽資料夾） |
 | `translator.py` | 翻譯機（預留接口，尚未實作） |
 
 ## Structure
@@ -106,6 +113,8 @@ motogp_scraper/
   http_client.py     # HTTP fetch layer, with Windows curl fallback
   models.py          # NewsItem and Article dataclasses
   reporter.py        # HTML/Markdown report builder, CSS styling, Chrome/browser opener
+  calendar_data.py    # 2026 MotoGP calendar (22 rounds with dates and GP names)
+  report_organizer.py # Auto-organize reports into race weekend folders
   rss.py             # RSS/Atom parser
   runner.py          # MotoGPScraper workflow with weighted RSS/HTML selection
   sources.py         # RSS-first source discovery with HTML fallback
@@ -158,6 +167,18 @@ The report pipeline supports two output formats:
 2. `reporter.build_report_markdown()` assembles the full Markdown document
 3. `reporter.write_report_markdown()` saves the raw `.md` file (UTF-8)，不經過 HTML 轉換
 4. 同樣自動用 Chrome 開啟（需安裝 Markdown 擴充套件才能正確渲染）
+
+### Report Auto-Organization
+
+Reports are automatically organized into race weekend folders based on the 2026 MotoGP calendar:
+
+1. On each run, `report_organizer.py` checks today's date against `calendar_data.py`
+2. If today is within ±3 days of a race, a folder is created (e.g. `2026 Round 8 Hungary Grand Prix of Hungary`)
+3. Existing reports within the date window are moved into that folder
+4. The new report is also saved directly into the folder
+5. If today is not near any race weekend, reports stay in the root `latest_news_reports/` folder
+
+Use `--no-organize` to disable this behavior.
 
 ## Configured News Sources
 

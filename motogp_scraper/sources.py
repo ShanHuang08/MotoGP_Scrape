@@ -61,9 +61,9 @@ def discover_from_listing(source: SourceConfig) -> list[NewsItem]:
     markup = fetch_text(source.listing_url)
     links = extract_links_with_lxml(
         markup,
-        base_url=source.listing_url,
-        xpaths=source.article_link_xpaths,
-        limit=source.max_listing_links,
+        base_url=source.listing_url, # 基底 URL
+        xpaths=source.article_link_xpaths, # 連結 XPath
+        limit=source.max_listing_links, # 最多取多少個連結
     )
 
     items: list[NewsItem] = []

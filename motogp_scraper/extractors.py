@@ -67,6 +67,12 @@ def normalize_url(base_url: str, href: str) -> str | None:
 
 
 def parse_html_document(markup: str) -> html.HtmlElement:
+    """
+    parse_html_document - 解析 HTML 內容為 HtmlElement
+
+    :param markup: HTML 網頁內容
+    :return: HtmlElement
+    """
     return html.fromstring(markup)
 
 
@@ -82,6 +88,15 @@ def extract_links_with_lxml(
     xpaths: Iterable[str],
     limit: int | None = None,
 ) -> list[str]:
+    """
+    extract_links_with_lxml - 用 XPath 規則從 HTML 中提取連結
+
+    :param markup: HTML 網頁內容
+    :param base_url: 網頁的基底 URL，用於將相對 URL 轉為絕對 URL
+    :param xpaths: 用於提取連結的 XPath 規則列表
+    :param limit: 最多提取的連結數量限制
+    :return: 連結清單
+    """
     document = parse_html_document(markup)
     links: list[str] = []
     seen: set[str] = set()
@@ -212,12 +227,12 @@ def extract_article_with_trafilatura(
     include_tables: bool = False,
 ) -> ExtractedContent | None:
     text = trafilatura_extract(
-        markup,
-        url=url,
-        include_comments=include_comments,
-        include_tables=include_tables,
-        output_format="txt",
-        favor_recall=True,
+        markup, # 原始 HTML 字串
+        url=url, # 可選，該頁面的 URL（trafilatura 會用來輔助判斷連結）
+        include_comments=include_comments, # 不要留言 
+        include_tables=include_tables, # 不要表格 
+        output_format="txt", # 輸出格式為純文字
+        favor_recall=True, # 偏向「多抽」，寧可多保留內容也不要漏掉
     )
     if not text:
         return None
