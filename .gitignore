@@ -1,0 +1,6 @@
+.deps/
+.deps_ext/
+.venv/
+latest_news_reports/
+__pycache__/
+*.py[cod]
