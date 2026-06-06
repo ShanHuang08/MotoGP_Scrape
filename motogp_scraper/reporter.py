@@ -1,3 +1,30 @@
+"""
+reporter.py - 報告生成器（HTML 與 Markdown 雙格式輸出）
+
+負責將爬蟲結果轉成報告檔，支援兩種輸出格式：
+- HTML 報告：帶 CSS 樣式的精美網頁，可用 Chrome 直接開啟閱讀
+- Markdown 報告：純文字 .md 檔，適合後續 LLM 處理或用 Markdown 編輯器閱讀
+
+主要函數：
+- build_report_markdown()    - 組合成 Markdown 格式的報告內容（兩種格式共用）
+- build_report_html()        - 將 Markdown 轉成完整 HTML 頁面（含嵌入 CSS）
+- markdown_report_to_html()  - 輕量 Markdown → HTML 轉換（標題/表格/段落/metadata）
+- write_report()             - 將 HTML 報告寫入檔案（UTF-8 with BOM）
+- write_report_markdown()    - 將 Markdown 報告寫入 .md 檔案（UTF-8）
+- open_report_in_chrome()    - 用 Chrome 開啟報告（找不到 Chrome 則用系統預設）
+
+內部輔助函數：
+- _render_markdown_table()   - Markdown 表格 → HTML <table>
+- _split_markdown_table_row()- 切開 Markdown 表格行，支援 escaped pipe 轉義
+- _format_table_cell()       - 表格中的 URL 變成可點擊連結
+- _render_metadata_line()    - Source/URL/Published 做成 metadata block
+- _report_css()              - 報告的 CSS 樣式（嵌入 HTML 中）
+- _find_chrome()             - 尋找 Windows Chrome 安裝位置
+
+依賴關係：
+- 被 cli.py 調用
+"""
+
 from __future__ import annotations
 
 import html
@@ -9,6 +36,7 @@ from datetime import datetime
 from pathlib import Path
 
 
+# 預設報告輸出目錄
 DEFAULT_REPORT_DIR = "latest_news_reports"
 
 
@@ -133,12 +161,46 @@ def markdown_report_to_html(markdown: str) -> str:
 
 
 def write_report(markdown: str, *, output_dir: str | Path, now: datetime) -> Path:
-    """寫出 HTML 報告；檔名包含日期與 latest news，副檔名固定為 .html。"""
+    """
+    寫出 HTML 報告；檔名包含日期與 latest news，副檔名固定為 .html。
+
+    參數：
+        markdown   - 由 build_report_markdown() 產生的 Markdown 報告內容
+        output_dir - 輸出資料夾路徑
+        now        - 用來產生檔名的時間戳記
+
+    回傳：寫出的檔案 Path 物件
+    """
     report_dir = Path(output_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{now:%Y-%m-%d %H%M%S} latest news.html"
     report_path = report_dir / filename
     report_path.write_text(build_report_html(markdown), encoding="utf-8-sig")
+    return report_path
+
+
+# ============================================================
+# write_report_markdown - 將 Markdown 報告寫入 .md 檔案
+# ============================================================
+# 與 write_report() 類似，但直接將 Markdown 原文寫入 .md 檔案，
+# 不經過 HTML 轉換。適合後續 LLM 處理或用 Markdown 編輯器閱讀。
+# ============================================================
+def write_report_markdown(markdown: str, *, output_dir: str | Path, now: datetime) -> Path:
+    """
+    寫出 Markdown 報告；檔名包含日期，副檔名為 .md。
+
+    參數：
+        markdown   - 由 build_report_markdown() 產生的 Markdown 報告內容
+        output_dir - 輸出資料夾路徑
+        now        - 用來產生檔名的時間戳記
+
+    回傳：寫出的檔案 Path 物件
+    """
+    report_dir = Path(output_dir)
+    report_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{now:%Y-%m-%d %H%M%S} latest news.md"
+    report_path = report_dir / filename
+    report_path.write_text(markdown, encoding="utf-8")
     return report_path
 
 

@@ -1,3 +1,19 @@
+"""
+rss.py - RSS/Atom 訂閱解析器
+
+負責解析 RSS 和 Atom 格式的 XML 內容，
+將其中的新聞項目轉換為 NewsItem 物件列表。
+
+同時支援兩種格式：
+- RSS 2.0：用 <item> 標籤，提取 title/link/pubDate/description
+- Atom：用 <atom:entry> 標籤，提取 atom:title/atom:link/atom:published
+
+依賴關係：
+- 被 sources.py 調用（discover_from_rss 函數）
+- 引用 models.py 的 NewsItem
+- 調用 datetime_utils.py 的 parse_datetime
+"""
+
 from __future__ import annotations
 
 from xml.etree import ElementTree
@@ -6,6 +22,9 @@ from .datetime_utils import parse_datetime
 from .models import NewsItem
 
 
+# ============================================================
+# _text - 從 XML 元素中安全地提取文字（私有輔助函數）
+# ============================================================
 def _text(
     element: ElementTree.Element,
     path: str,
@@ -18,6 +37,12 @@ def _text(
     return value or None
 
 
+# ============================================================
+# parse_rss_items - 解析 RSS/Atom XML 內容
+# ============================================================
+# 將 RSS XML 字串解析為 NewsItem 列表。
+# 每個 NewsItem 的 raw_meta 會標記 discovery_method="rss"。
+# ============================================================
 def parse_rss_items(
     markup: str,
     *,

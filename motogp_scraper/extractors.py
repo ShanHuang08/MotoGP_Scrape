@@ -1,3 +1,27 @@
+"""
+extractors.py - HTML 內容提取器
+
+負責從 HTML 網頁中提取所需的內容，包含三大功能：
+
+1. 提取新聞連結：extract_links_with_lxml() - 用 XPath 規則從 HTML 中提取連結
+2. 提取文章內文：
+   - extract_article_text()             - 主入口，自動選擇最佳提取方式
+   - extract_article_with_trafilatura() - 用 trafilatura 庫提取（預設優先）
+   - extract_gpone_article_sections()   - GPone 專用提取器
+   - extract_article_with_lxml_fallback() - 用 lxml 提取 <p> 段落（備用）
+3. 提取發佈日期：
+   - extract_published_at_with_lxml()   - 從 meta 標籤、JSON-LD、URL 路徑提取日期
+4. 網站專用清理：
+   - clean_article_text_for_site()      - 依網站清理雜訊（目前針對 Motorsport.com）
+   - remove_motorsport_tail_noise()     - 截斷 Motorsport.com 照片集/訂閱尾巴
+
+提取策略：GPone 專用 → trafilatura → lxml 段落備用 → 空字串
+
+依賴關係：
+- 被 sources.py 調用（提取連結、標題、日期）
+- 被 runner.py 調用（提取文章內文）
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,12 +37,23 @@ from trafilatura.core import extract as trafilatura_extract
 from .datetime_utils import parse_datetime
 
 
+# ============================================================
+# ExtractedContent - 提取結果資料結構
+# ============================================================
+# text   - 提取到的純文字內容
+# method - 使用了哪種提取方法
+# ============================================================
 @dataclass(frozen=True)
 class ExtractedContent:
     text: str
     method: str
 
 
+# ============================================================
+# normalize_url - 將 URL 正規化
+# ============================================================
+# 將相對 URL 轉為絕對 URL，過濾掉 #, mailto:, javascript: 等無效連結。
+# ============================================================
 def normalize_url(base_url: str, href: str) -> str | None:
     href = (href or "").strip()
     if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
@@ -35,6 +70,11 @@ def parse_html_document(markup: str) -> html.HtmlElement:
     return html.fromstring(markup)
 
 
+# ============================================================
+# extract_links_with_lxml - 用 XPath 規則從 HTML 中提取連結
+# ============================================================
+# 遍歷多個 XPath 規則，自動去重，將相對 URL 轉為絕對 URL。
+# ============================================================
 def extract_links_with_lxml(
     markup: str,
     *,
@@ -60,6 +100,11 @@ def extract_links_with_lxml(
     return links
 
 
+# ============================================================
+# extract_title_with_lxml - 用 XPath 規則提取文章標題
+# ============================================================
+# 先嘗試提供的 XPath，找不到則退回到 <title> 標籤。
+# ============================================================
 def extract_title_with_lxml(markup: str, xpaths: Iterable[str] = ()) -> str | None:
     document = parse_html_document(markup)
     for xpath in xpaths:
@@ -77,6 +122,14 @@ def extract_title_with_lxml(markup: str, xpaths: Iterable[str] = ()) -> str | No
     return None
 
 
+# ============================================================
+# extract_published_at_with_lxml - 從 HTML 中提取文章發佈日期
+# ============================================================
+# 嘗試順序：
+# 1. 各種 <meta> 標籤（article:published_time, og:published_time 等）
+# 2. JSON-LD 結構化資料中的 datePublished 等欄位
+# 3. URL 路徑中的日期模式（如 /2024/06/01/）
+# ============================================================
 def extract_published_at_with_lxml(
     markup: str,
     *,
@@ -116,6 +169,13 @@ def extract_published_at_with_lxml(
     return None
 
 
+# ============================================================
+# _extract_date_from_json_ld - 從 JSON-LD 腳本中提取日期（私有函數）
+# ============================================================
+# 解析 <script type="application/ld+json"> 中的結構化資料，
+# 找尋 datePublished/dateCreated/dateModified/uploadDate 等欄位。
+# 支援 @graph 陣列的遞迴搜尋。
+# ============================================================
 def _extract_date_from_json_ld(script: str, *, default_timezone: str) -> datetime | None:
     try:
         payload = json.loads(script)
@@ -139,6 +199,11 @@ def _extract_date_from_json_ld(script: str, *, default_timezone: str) -> datetim
     return None
 
 
+# ============================================================
+# extract_article_with_trafilatura - 用 trafilatura 庫提取文章內文
+# ============================================================
+# trafilatura 能智能識別文章主體，過濾廣告/導航欄。
+# ============================================================
 def extract_article_with_trafilatura(
     markup: str,
     *,
@@ -163,6 +228,12 @@ def extract_article_with_trafilatura(
     return ExtractedContent(text=cleaned, method="trafilatura")
 
 
+# ============================================================
+# extract_gpone_article_sections - GPone 專用文章提取器
+# ============================================================
+# GPone 的文章內文分散在 article/div[1]/section[*]/div[2]，
+# trafilatura 無法完整處理，所以用專用 XPath 提取。
+# ============================================================
 def extract_gpone_article_sections(markup: str) -> ExtractedContent | None:
     """GPone 正文分散在 article/div[1]/section[*]/div[2]，先用專用 XPath 抽完整段落。"""
     document = parse_html_document(markup)
@@ -194,6 +265,11 @@ def can_extract_with_trafilatura(markup: str, *, url: str | None = None) -> bool
     return bool(extracted and extracted.text)
 
 
+# ============================================================
+# extract_article_with_lxml_fallback - 備用方案：用 lxml 提取段落文字
+# ============================================================
+# 從 <article>/<main>/<p> 標籤中提取，只保留長度超過 40 字元的段落。
+# ============================================================
 def extract_article_with_lxml_fallback(markup: str) -> ExtractedContent | None:
     document = parse_html_document(markup)
     paragraphs = [
@@ -206,6 +282,15 @@ def extract_article_with_lxml_fallback(markup: str) -> ExtractedContent | None:
     return ExtractedContent(text=text.strip(), method="lxml-paragraph-fallback")
 
 
+# ============================================================
+# extract_article_text - 提取文章內文的主入口函數
+# ============================================================
+# 提取策略（優先順序）：
+# 1. GPone 專用提取器（如果是 gpone.com 的網址）
+# 2. trafilatura（效果最好）
+# 3. lxml 段落備用
+# 4. 回傳空字串 method="empty"
+# ============================================================
 def extract_article_text(markup: str, *, url: str | None = None) -> ExtractedContent:
     # GPone 的主文不適合完全依賴 trafilatura，優先使用站內固定 section 結構。
     if url and "gpone.com" in urlparse(url).netloc:

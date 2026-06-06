@@ -48,7 +48,15 @@ python main.py --limit 10 --skip-articles
 
 # Change the report folder
 python main.py --limit 10 --output-dir reports
+
+# Output as Markdown (.md) instead of HTML (.html)
+python main.py --limit 10 --format markdown
+
+# Markdown output with other options combined
+python main.py --limit 5 --format markdown --skip-articles --output-dir reports
 ```
+
+> `--format` 預設為 `html`。設為 `markdown` 時會產出純 `.md` 檔，同樣自動用 Chrome 開啟（需安裝 Markdown 擴充套件）。
 
 ## Quick Overview 快速理解
 
@@ -65,7 +73,7 @@ main.py（入口）
         → extractors.py（用 lxml 解析 HTML 連結，用 trafilatura 提取文章內文）
       → datetime_utils.py（日期時間解析 + 時區轉換為 UTC+8）
       → models.py（定義資料結構：NewsItem 新聞項目、Article 完整文章）
-    → reporter.py（生成 HTML 報告 + 用 Chrome 開啟）
+    → reporter.py（生成報告：HTML 或 Markdown + 用 Chrome 開啟 HTML 報告）
     → translator.py（預留的翻譯功能，目前未實作）
 ```
 
@@ -80,7 +88,7 @@ main.py（入口）
 | `sources.py` | 決定用 RSS 還是直接掃描網頁來找新聞 |
 | `runner.py` | 大總管，把所有東西串起來（含加權選取策略） |
 | `cli.py` | 使用者介面（接收指令、組報告） |
-| `reporter.py` | 排版印刷廠（把 Markdown 報告轉成漂亮 HTML + 開瀏覽器） |
+| `reporter.py` | 排版印刷廠（把 Markdown 報告轉成漂亮 HTML 或純 .md 檔 + 開瀏覽器） |
 | `datetime_utils.py` | 時鐘（解析各種日期格式 + 統一轉成 UTC+8） |
 | `models.py` | 資料的容器（定義新聞和文章長什麼樣） |
 | `translator.py` | 翻譯機（預留接口，尚未實作） |
@@ -97,7 +105,7 @@ motogp_scraper/
   extractors.py      # Reusable lxml and trafilatura extraction helpers; site-specific cleaners
   http_client.py     # HTTP fetch layer, with Windows curl fallback
   models.py          # NewsItem and Article dataclasses
-  reporter.py        # HTML report builder, CSS styling, Chrome/browser opener
+  reporter.py        # HTML/Markdown report builder, CSS styling, Chrome/browser opener
   rss.py             # RSS/Atom parser
   runner.py          # MotoGPScraper workflow with weighted RSS/HTML selection
   sources.py         # RSS-first source discovery with HTML fallback
@@ -134,15 +142,22 @@ Each configured source is tried in order:
 
 All timestamps are converted to **UTC+8** for display. Each source declares its own `timezone_name` (e.g. `Europe/London`, `Europe/Rome`, `UTC`) so publish dates are correctly interpreted before conversion.
 
-### HTML Report Output
+### Report Output
 
-The report pipeline:
+The report pipeline supports two output formats:
 
+**HTML（預設）：**
 1. `cli.py` renders a Markdown table + article sections
 2. `reporter.build_report_markdown()` assembles the full Markdown document
 3. `reporter.build_report_html()` converts Markdown to a styled HTML page with embedded CSS
 4. `reporter.write_report()` saves the HTML file (UTF-8 with BOM for Windows compatibility)
 5. `reporter.open_report_in_chrome()` opens the report in Chrome (or OS default)
+
+**Markdown（`--format markdown`）：**
+1. `cli.py` renders a Markdown table + article sections（表格 Link 欄位使用 `[link](url)` 格式）
+2. `reporter.build_report_markdown()` assembles the full Markdown document
+3. `reporter.write_report_markdown()` saves the raw `.md` file (UTF-8)，不經過 HTML 轉換
+4. 同樣自動用 Chrome 開啟（需安裝 Markdown 擴充套件才能正確渲染）
 
 ## Configured News Sources
 
