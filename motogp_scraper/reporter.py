@@ -17,6 +17,7 @@ reporter.py - 報告生成器（HTML 與 Markdown 雙格式輸出）
 - _render_markdown_table()   - Markdown 表格 → HTML <table>
 - _split_markdown_table_row()- 切開 Markdown 表格行，支援 escaped pipe 轉義
 - _format_table_cell()       - 表格中的 URL 變成可點擊連結
+- _extract_article_heading_ids() - 從 Markdown 預先掃描文章標題 ID，供表格錨點使用
 - _render_metadata_line()    - Source/URL/Published 做成 metadata block
 - _report_css()              - 報告的 CSS 樣式（嵌入 HTML 中）
 - _find_chrome()             - 尋找 Windows Chrome 安裝位置
@@ -94,11 +95,23 @@ def build_report_html(markdown: str, *, title: str = "MotoGP Latest News") -> st
 
 
 def markdown_report_to_html(markdown: str) -> str:
-    """依照目前報告格式做輕量轉換：標題、表格、metadata、一般段落。"""
+    """
+    依照目前報告格式做輕量轉換：標題、表格、段落、metadata。
+
+    HTML 專屬增強功能：
+    - 表格 Title 欄位變成錨點連結，點擊可跳轉到對應文章段落
+    - 每篇文章結尾自動加入「↑ Back to table」返回目錄連結
+    - 平滑滾動效果（由 CSS scroll-behavior 控制）
+    """
+    # 預先掃描文章標題 ID，供表格中的 Title 欄位建立錨點連結
+    article_ids = _extract_article_heading_ids(markdown)
+
     lines = markdown.splitlines()
     html_parts: list[str] = []
     paragraph_lines: list[str] = []
     index = 0
+    # 追蹤目前所在的文章編號，用來插入「返回目錄」連結
+    current_article_index: int | None = None
 
     while index < len(lines):
         line = lines[index].rstrip()
@@ -109,14 +122,14 @@ def markdown_report_to_html(markdown: str) -> str:
             index += 1
             continue
 
-        # Markdown 表格區塊轉成 <table><thead><tbody>。
+        # Markdown 表格區塊轉成 <table><thead><tbody>，並傳入 article_ids 建立錨點。
         if _is_table_start(lines, index):
             _flush_paragraph(paragraph_lines, html_parts)
             table_lines: list[str] = []
             while index < len(lines) and lines[index].strip().startswith("|"):
                 table_lines.append(lines[index])
                 index += 1
-            html_parts.append(_render_markdown_table(table_lines))
+            html_parts.append(_render_markdown_table(table_lines, article_ids=article_ids))
             continue
 
         # # MotoGP Latest News 轉成 h1，並加上與 markdown reader 類似的 anchor。
@@ -134,10 +147,23 @@ def markdown_report_to_html(markdown: str) -> str:
 
         # ## Latest News / ## Article Text / ## 1. Title 轉成 h2。
         if line.startswith("## "):
-            _flush_paragraph(paragraph_lines, html_parts)
             heading = line[3:].strip()
             heading_id = _slugify(heading)
-            article_class = " article-heading" if re.match(r"^\d+\.", heading) else ""
+            article_match = re.match(r"^(\d+)\.", heading)
+
+            # 遇到新的文章段落時，先在前一篇文章結尾插入「返回目錄」連結
+            if article_match:
+                new_index = int(article_match.group(1))
+                if current_article_index is not None and new_index != current_article_index:
+                    _flush_paragraph(paragraph_lines, html_parts)
+                    html_parts.append(
+                        '<p class="back-to-toc">'
+                        '<a href="#latest-news">\u2191 Back to table</a></p>'
+                    )
+                current_article_index = new_index
+
+            _flush_paragraph(paragraph_lines, html_parts)
+            article_class = " article-heading" if article_match else ""
             html_parts.append(
                 f'<h2 id="{heading_id}" class="section-heading{article_class}">'
                 f"{html.escape(heading)}</h2>"
@@ -157,6 +183,14 @@ def markdown_report_to_html(markdown: str) -> str:
         index += 1
 
     _flush_paragraph(paragraph_lines, html_parts)
+
+    # 最後一篇文章也要加入「返回目錄」連結
+    if current_article_index is not None:
+        html_parts.append(
+            '<p class="back-to-toc">'
+            '<a href="#latest-news">\u2191 Back to table</a></p>'
+        )
+
     return "\n".join(f"    {part}" for part in html_parts)
 
 
@@ -223,8 +257,15 @@ def open_report_in_chrome(path: str | Path) -> bool:
     return True
 
 
-def _render_markdown_table(table_lines: list[str]) -> str:
-    """將 Markdown 表格轉成真正的 HTML table。"""
+def _render_markdown_table(table_lines: list[str], *, article_ids: dict[int, str] | None = None) -> str:
+    """
+    將 Markdown 表格轉成真正的 HTML table。
+
+    參數：
+        table_lines  - Markdown 表格的原始行列表
+        article_ids  - 文章編號 → heading id 的映射，用來將 Title 欄位變成錨點連結。
+                       例如 {1: "1-some-title", 2: "2-another-title"}
+    """
     header_cells = _split_markdown_table_row(table_lines[0])
     body_rows = [
         _split_markdown_table_row(row)
@@ -232,12 +273,34 @@ def _render_markdown_table(table_lines: list[str]) -> str:
         if row.strip().startswith("|")
     ]
 
+    # 找出 Title 欄位在哪一欄，以便後續插入錨點連結
+    title_col_index: int | None = None
+    for i, cell in enumerate(header_cells):
+        if cell.strip().lower() == "title":
+            title_col_index = i
+            break
+
     header_html = "".join(f"<th>{html.escape(cell)}</th>" for cell in header_cells)
     rows_html: list[str] = []
-    for row in body_rows:
+    for row_index, row in enumerate(body_rows):
         cells = _normalize_row(row, len(header_cells))
-        cell_html = "".join(f"<td>{_format_table_cell(cell)}</td>" for cell in cells)
-        rows_html.append(f"<tr>{cell_html}</tr>")
+        cell_parts: list[str] = []
+        for col_index, cell in enumerate(cells):
+            # Title 欄位變成錨點連結，點擊可跳轉到對應文章段落
+            if (
+                title_col_index is not None
+                and col_index == title_col_index
+                and article_ids
+                and (row_index + 1) in article_ids
+            ):
+                article_id = article_ids[row_index + 1]
+                escaped = html.escape(cell)
+                cell_parts.append(
+                    f'<td><a href="#{article_id}" class="toc-link">{escaped}</a></td>'
+                )
+            else:
+                cell_parts.append(f"<td>{_format_table_cell(cell)}</td>")
+        rows_html.append(f"<tr>{''.join(cell_parts)}</tr>")
 
     return "\n".join(
         [
@@ -334,6 +397,27 @@ def _slugify(value: str) -> str:
     """產生簡單 anchor id。"""
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return slug or "section"
+
+
+# ============================================================
+# _extract_article_heading_ids - 預先掃描文章標題的 anchor ID
+# ============================================================
+# 掃描 Markdown 中 "## N. Title" 格式的文章標題，
+# 回傳 {文章編號: slugified_id} 的映射。
+# 例如 "## 1. Rossi wins" → {1: "1-rossi-wins"}
+# 這些 ID 會與 markdown_report_to_html() 中產生的 h2 id 一致。
+# ============================================================
+def _extract_article_heading_ids(markdown: str) -> dict[int, str]:
+    """從 Markdown 預先掃描文章標題，回傳 {編號: anchor_id} 映射。"""
+    result: dict[int, str] = {}
+    for line in markdown.splitlines():
+        if line.startswith("## "):
+            heading = line[3:].strip()
+            match = re.match(r"^(\d+)\.", heading)
+            if match:
+                index = int(match.group(1))
+                result[index] = _slugify(heading)
+    return result
 
 
 def _report_css() -> str:
@@ -441,6 +525,29 @@ def _report_css() -> str:
     }
     tbody tr:hover {
       background: var(--accent-soft);
+    }
+    /* 平滑滾動：點擊錨點連結時不會瞬間跳轉 */
+    html {
+      scroll-behavior: smooth;
+    }
+    /* 錨點跳轉時保留上方間距，避免標題貼在視窗頂端 */
+    h2[id] {
+      scroll-margin-top: 20px;
+    }
+    /* 表格中的目錄連結樣式 */
+    a.toc-link {
+      font-weight: 600;
+    }
+    /* 返回目錄按鈕樣式 */
+    .back-to-toc {
+      margin-top: 8px;
+    }
+    .back-to-toc a {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .back-to-toc a:hover {
+      color: var(--accent);
     }
     """.strip()
 
