@@ -57,6 +57,9 @@ python main.py --limit 10 --no-organize
 
 # Markdown output with other options combined
 python main.py --limit 5 --format markdown --skip-articles --output-dir reports
+
+# Run unit tests
+python main.py --unit-test
 ```
 
 > `--format` 預設為 `html`。設為 `markdown` 時會產出純 `.md` 檔，同樣自動用 Chrome 開啟（需安裝 Markdown 擴充套件）。
@@ -104,6 +107,7 @@ main.py（入口）
 
 ```text
 main.py
+run_tests.py           # Unit test runner
 motogp_scraper/
   __init__.py        # Package entry; exports MotoGPScraper
   cli.py             # CLI arguments, report orchestration
@@ -119,6 +123,16 @@ motogp_scraper/
   runner.py          # MotoGPScraper workflow with weighted RSS/HTML selection
   sources.py         # RSS-first source discovery with HTML fallback
   translator.py      # Placeholder for future LLM translation
+tests/
+  __init__.py
+  conftest.py            # 共用 fixtures（make_news_item, make_article, make_extracted, make_race_entry 等）
+  test_datetime_utils.py # parse_datetime, ensure_timezone, to_utc_plus_8
+  test_runner.py         # _dedupe_by_url, _select_weighted_latest, _is_rss_item
+  test_extractors.py     # normalize_url, extract_published_at_with_lxml, remove_motorsport_tail_noise, extract_article_text, clean_article_text_for_site
+  test_reporter.py       # _split_markdown_table_row, _normalize_row
+  test_report_organizer.py # _build_race_folder_name, _parse_report_date
+  test_models.py         # Article, ExtractedContent, RaceEntry（frozen 唯讀性、欄位存取、相等性）
+  test_calendar_data.py  # MOTOGP_2026_CALENDAR 完整性、find_race_nearby、get_race_window
 ```
 
 ## Key Strategies
@@ -132,7 +146,7 @@ Each configured source is tried in order:
 
 ### Weighted Selection
 
-`MotoGPScraper.latest_news()` uses a weighted selection strategy (`RSS_SHARE = 0.65`):
+`MotoGPScraper.latest_news()` uses a weighted selection strategy (`RSS_SHARE = 0.6`):
 
 1. Split items into RSS-sourced and HTML-sourced groups
 2. Sort each group by publish time (UTC+8), newest first
@@ -180,6 +194,46 @@ Reports are automatically organized into race weekend folders based on the 2026 
 
 Use `--no-organize` to disable this behavior.
 
+## Unit Tests
+
+專案內建單元測試（基於 **pytest** 框架），放在 `tests/` 資料夾下，涵蓋核心資料物件、純函數與提取邏輯：
+
+| 測試檔案 | 測試範圍 |
+|----------|----------|
+| `test_datetime_utils.py` | `parse_datetime()`、`ensure_timezone()`、`to_utc_plus_8()` |
+| `test_runner.py` | `_dedupe_by_url()`、`_select_weighted_latest()`、`_is_rss_item()` |
+| `test_extractors.py` | `normalize_url()`、`extract_published_at_with_lxml()`、`remove_motorsport_tail_noise()`、`extract_article_text()`、`clean_article_text_for_site()` |
+| `test_reporter.py` | `_split_markdown_table_row()`、`_normalize_row()` |
+| `test_report_organizer.py` | `_build_race_folder_name()`、`_parse_report_date()` |
+| `test_models.py` | `Article`、`ExtractedContent`、`RaceEntry`（frozen 唯讀性、欄位存取、相等性） |
+| `test_calendar_data.py` | `MOTOGP_2026_CALENDAR` 完整性、`find_race_nearby()`、`get_race_window()` |
+
+**共用 Fixtures（`conftest.py`）：**
+
+| Fixture | 用途 |
+|---------|------|
+| `make_news_item` | 快速建立測試用的 `NewsItem` 工廠函數 |
+| `sample_news_item` | 預建的 `NewsItem` 樣本 |
+| `scraper` | `MotoGPScraper` 實例 |
+| `make_article` | 快速建立測試用的 `Article` 工廠函數 |
+| `sample_article` | 預建的 `Article` 樣本 |
+| `make_extracted` | 快速建立測試用的 `ExtractedContent` 工廠函數 |
+| `make_race_entry` | 快速建立測試用的 `RaceEntry` 工廠函數 |
+| `sample_race_entry` | 預建的 `RaceEntry` 樣本（匈牙利站） |
+
+執行方式：
+
+```powershell
+# 透過 CLI 執行
+python main.py --unit-test
+
+# 或直接執行 run_tests.py
+python run_tests.py
+
+# 或直接用 pytest（需先安裝）
+pytest tests/ -v
+```
+
 ## Configured News Sources
 
 | Source | RSS | HTML Fallback | Timezone |
@@ -187,6 +241,7 @@ Use `--no-organize` to disable this behavior.
 | Crash.net MotoGP | Yes | Backup | Europe/London |
 | GPone MotoGP | No | Primary | Europe/Rome |
 | Motorsport.com MotoGP | Yes | Backup | UTC |
+| Motorsport.com ES MotoGP | Yes | Backup | Europe/Madrid |
 
 ## Translation Hook
 

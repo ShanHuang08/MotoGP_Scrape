@@ -33,7 +33,8 @@ import shutil
 from datetime import date
 from pathlib import Path
 
-from .calendar_data import RaceEntry, find_race_nearby, get_race_window
+from .calendar_data import find_race_nearby, get_race_window
+from .models import RaceEntry
 
 
 # ============================================================

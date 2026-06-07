@@ -1,48 +1,27 @@
 """
 config.py - 新聞來源設定檔
 
-定義了：
-1. SourceConfig - 每個新聞來源的設定結構
-2. DEFAULT_SOURCES - 預設的三個新聞來源網站設定
+定義了 DEFAULT_SOURCES：預設的四個 MotoGP 新聞來源網站設定。
 
-SourceConfig 欄位：
-- name                : 新聞來源顯示名稱
-- listing_url         : 新聞列表頁網址（用來直接掃描網頁找新聞）
-- rss_url             : RSS 訂閱網址（如果有提供，優先使用）
-- article_link_xpaths : 用來從 HTML 中提取新聞連結的 XPath 規則
-- title_xpaths        : 用來從 HTML 中提取標題的 XPath 規則
-- max_listing_links   : 掃描列表頁時最多取多少個連結（預設 30）
-- timezone_name       : 該來源的時區名稱（如 "Europe/London"）
+SourceConfig 的類別定義已移至 models.py，本模組只負責提供預設的來源清單。
 
 依賴關係：
+- 引用 models.py 的 SourceConfig
 - 被 runner.py 和 sources.py 引用
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from .models import SourceConfig
 
 
 # ============================================================
-# SourceConfig - 新聞來源設定結構（唯讀 dataclass）
-# ============================================================
-@dataclass(frozen=True)
-class SourceConfig:
-    name: str                                          # 新聞來源顯示名稱
-    listing_url: str                                   # 新聞列表頁網址
-    rss_url: str | None = None                         # RSS 訂閱網址（可選）
-    article_link_xpaths: tuple[str, ...] = field(default_factory=tuple)  # 提取文章連結的 XPath 規則
-    title_xpaths: tuple[str, ...] = field(default_factory=tuple)         # 提取標題的 XPath 規則
-    max_listing_links: int = 30                        # 掃描列表頁時最多取多少個連結
-    timezone_name: str = "UTC"                         # 該來源的時區（例如 "Europe/London"）
-
-
-# ============================================================
-# DEFAULT_SOURCES - 預設的三個 MotoGP 新聞來源
+# DEFAULT_SOURCES - 預設的 MotoGP 新聞來源
 # ============================================================
 # 1. Crash.net - 有 RSS，時區 Europe/London
 # 2. GPone - 無 RSS（純網頁掃描），時區 Europe/Rome
-# 3. Motorsport.com - 有 RSS，時區 UTC
+# 3. Motorsport.com（英文版）- 有 RSS，時區 UTC
+# 4. Motorsport.com ES（西班牙文版）- 有 RSS，時區 Europe/Madrid
 # ============================================================
 DEFAULT_SOURCES: tuple[SourceConfig, ...] = (
     # ---- 來源 1: Crash.net MotoGP ----
@@ -67,7 +46,7 @@ DEFAULT_SOURCES: tuple[SourceConfig, ...] = (
         ),
         timezone_name="Europe/Rome",
     ),
-    # ---- 來源 3: Motorsport.com MotoGP ----
+    # ---- 來源 3: Motorsport.com MotoGP（英文版）----
     SourceConfig(
         name="Motorsport.com MotoGP",
         listing_url="https://www.motorsport.com/motogp/news/",
@@ -77,5 +56,17 @@ DEFAULT_SOURCES: tuple[SourceConfig, ...] = (
             "//article//a/@href",
         ),
         timezone_name="UTC",
+    ),
+    # ---- 來源 4: Motorsport.com ES MotoGP（西班牙文版）----
+    # 原文標題和內文保持西班牙文，編碼由 charset_normalizer 自動偵測。
+    SourceConfig(
+        name="Motorsport.com ES MotoGP",
+        listing_url="https://es.motorsport.com/motogp/news/",
+        rss_url="https://es.motorsport.com/rss/motogp/news/",
+        article_link_xpaths=(
+            "//a[contains(@href, '/motogp/news/')]/@href",
+            "//article//a/@href",
+        ),
+        timezone_name="Europe/Madrid",
     ),
 )

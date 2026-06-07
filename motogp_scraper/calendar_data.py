@@ -2,11 +2,7 @@
 calendar_data.py - 2026 MotoGP 賽程行事曆
 
 儲存 2026 年賽季所有 22 站的比賽資訊，供 report_organizer.py 使用。
-每個賽事包含：
-- round_number : 第幾站（1-22）
-- date         : 比賽日期（date 物件）
-- grand_prix   : 大獎賽全名（如 "Hungary Grand Prix of Hungary"）
-- country      : 國家名稱（如 "Hungary"）
+資料結構 RaceEntry 定義在 models.py，本檔案只負責存放行事曆資料和查詢函數。
 
 主要函數：
 - find_race_nearby()  - 檢查指定日期是否在某一站的 ±N 天窗口內
@@ -17,19 +13,9 @@ calendar_data.py - 2026 MotoGP 賽程行事曆
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date, timedelta
 
-
-# ============================================================
-# RaceEntry - 單一賽站資料結構
-# ============================================================
-@dataclass(frozen=True)
-class RaceEntry:
-    round_number: int       # 第幾站（1-22）
-    date: date              # 比賽日期
-    grand_prix: str         # 大獎賽全名
-    country: str            # 國家名稱
+from .models import RaceEntry
 
 
 # ============================================================

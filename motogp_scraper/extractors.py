@@ -24,7 +24,6 @@ extractors.py - HTML 內容提取器
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 import json
 import re
@@ -35,18 +34,7 @@ from lxml import html
 from trafilatura.core import extract as trafilatura_extract
 
 from .datetime_utils import parse_datetime
-
-
-# ============================================================
-# ExtractedContent - 提取結果資料結構
-# ============================================================
-# text   - 提取到的純文字內容
-# method - 使用了哪種提取方法
-# ============================================================
-@dataclass(frozen=True)
-class ExtractedContent:
-    text: str
-    method: str
+from .models import ExtractedContent
 
 
 # ============================================================

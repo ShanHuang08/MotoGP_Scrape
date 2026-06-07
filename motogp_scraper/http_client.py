@@ -143,19 +143,23 @@ def fetch_text(
 # ============================================================
 def decode_response_bytes(data: bytes, *, fallback_encoding: str = "utf-8") -> str:
     try:
+        # 優先用 charset_normalizer 自動偵測編碼
         from charset_normalizer import from_bytes
 
         best = from_bytes(data).best()
         if best is not None:
             return str(best)
+
+        # charset_normalizer 無法偵測時，退回常見編碼
+        for encoding in (fallback_encoding, "utf-8-sig", "cp1252", "latin-1"):
+            try:
+                return data.decode(encoding)
+            except UnicodeDecodeError:
+                continue
     except Exception:
         pass
 
-    for encoding in (fallback_encoding, "utf-8-sig", "cp1252", "latin-1"):
-        try:
-            return data.decode(encoding)
-        except UnicodeDecodeError:
-            continue
+    # 最終防線：強制解碼，無法解碼的字元替換為 
     return data.decode(fallback_encoding, errors="replace")
 
 

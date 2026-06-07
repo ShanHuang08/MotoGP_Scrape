@@ -8,7 +8,7 @@ runner.py - 爬蟲主控制器（大總管）
 - latest_news()   - 從所有來源收集新聞，去重，加權選取，排序
 - fetch_article() - 下載並提取一篇新聞文章的內文
 
-加權選取策略 (RSS_SHARE = 0.65)：
+加權選取策略 (RSS_SHARE = 0.6)：
 - 將新聞分為 RSS 來源和 HTML 來源兩組
 - ~65% 的名額分配給 RSS 來源，剩下的給 HTML 來源
 - 各組按發佈時間 (UTC+8) 降序排序
@@ -25,16 +25,16 @@ import math
 import sys
 from datetime import datetime, timezone
 
-from .config import DEFAULT_SOURCES, SourceConfig
+from .config import DEFAULT_SOURCES
 from .datetime_utils import to_utc_plus_8
 from .extractors import extract_article_text
 from .http_client import fetch_text
-from .models import Article, NewsItem
+from .models import Article, NewsItem, SourceConfig
 from .sources import discover_source_items
 
 
 # RSS 來源佔比：65% 的名額優先分配給 RSS 來源的新聞
-RSS_SHARE = 0.65
+RSS_SHARE = 0.6
 
 
 # ============================================================

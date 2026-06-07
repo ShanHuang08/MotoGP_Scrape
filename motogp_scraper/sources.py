@@ -22,14 +22,13 @@ sources.py - 新聞來源探索器
 
 from __future__ import annotations
 
-from .config import SourceConfig
 from .extractors import (
     extract_links_with_lxml,
     extract_published_at_with_lxml,
     extract_title_with_lxml,
 )
 from .http_client import fetch_text
-from .models import NewsItem
+from .models import NewsItem, SourceConfig
 from .rss import parse_rss_items
 
 
@@ -72,7 +71,9 @@ def discover_from_listing(source: SourceConfig) -> list[NewsItem]:
             article_markup = fetch_text(url)
         except Exception:
             continue
-
+        # A or B 不是回傳 True/False，而是回傳第一個「為真」的值
+        # 例如：如果 title 提取到標題，則回傳 title
+        # 例如：如果 title 為空，則回傳 url
         title = extract_title_with_lxml(article_markup, source.title_xpaths) or url
         published_at = extract_published_at_with_lxml(
             article_markup,

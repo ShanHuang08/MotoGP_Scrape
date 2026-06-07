@@ -21,6 +21,7 @@ cli.py - 命令行介面（Command Line Interface）
 - --output-dir PATH : 報告檔存到哪個資料夾
 - --no-organize     : 不自動根據行事曆收納報告到比賽資料夾
 - --no-open         : 只寫報告檔，不自動用瀏覽器開啟（HTML 和 Markdown 都適用）
+- --unit-test       : 執行 tests/ 資料夾下的單元測試後結束
 
 依賴關係：
 - 被 main.py 調用
@@ -160,6 +161,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Write the report but do not open it in Chrome/browser.",
     )
+    # --unit-test: 執行單元測試後直接結束，不進行爬蟲流程
+    parser.add_argument(
+        "--unit-test",
+        action="store_true",
+        help="Run unit tests from the tests/ folder and exit.",
+    )
     return parser
 
 
@@ -176,6 +183,13 @@ def build_parser() -> argparse.ArgumentParser:
 # ============================================================
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # 單元測試模式：執行 tests/ 資料夾下所有測試後直接結束
+    if args.unit_test:
+        from run_tests import run_all_tests
+        success = run_all_tests(verbosity=2)
+        return 0 if success else 1
+
     scraper = MotoGPScraper()
 
     # 步驟 0：根據行事曆檢查今天是否在某站比賽的窗口內，
