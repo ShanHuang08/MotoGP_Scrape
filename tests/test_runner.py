@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 import pytest
 
 from motogp_scraper.models import NewsItem
-from motogp_scraper.runner import MotoGPScraper
+from motogp_scraper.runner import BlockedArticleError, MotoGPScraper
 
 
 # ============================================================
@@ -72,6 +72,27 @@ class TestDedupeByUrl:
         assert len(result) == 3
 
 
+class TestFetchArticle:
+    """fetch_article - article body fetching and filtering."""
+
+    def test_blocked_page_raises_without_article(
+        self, scraper: MotoGPScraper, make_news_item
+    ) -> None:
+        item = make_news_item(
+            "https://www.gpone.com/it/2026/06/23/motogp/example.html",
+            discovery_method="html",
+        )
+        item.raw_meta["article_markup"] = """
+        <html>
+          <head><title>Just a moment...</title></head>
+          <body>Enable JavaScript and cookies to continue</body>
+        </html>
+        """
+
+        with pytest.raises(BlockedArticleError):
+            scraper.fetch_article(item)
+
+
 # ============================================================
 # _select_weighted_latest 測試
 # ============================================================
@@ -96,7 +117,7 @@ class TestSelectWeightedLatest:
         assert len(result) == 2
 
     def test_rss_items_prioritized(self, scraper: MotoGPScraper, make_news_item) -> None:
-        """RSS 來源佔比 60%，10 筆中應有 6 筆 RSS"""
+        """RSS 來源佔比 50%，10 筆中應有 5 筆 RSS"""
         rss_items = [
             make_news_item(
                 f"https://rss.com/{i}",
@@ -115,7 +136,7 @@ class TestSelectWeightedLatest:
         ]
         result = scraper._select_weighted_latest(rss_items + html_items, limit=10)
         rss_count = sum(1 for item in result if item.raw_meta.get("discovery_method") == "rss")
-        assert rss_count == 6
+        assert rss_count == 5
 
     def test_overflow_from_rss_to_html(self, scraper: MotoGPScraper, make_news_item) -> None:
         """RSS 不夠時，溢出給 HTML 補足"""

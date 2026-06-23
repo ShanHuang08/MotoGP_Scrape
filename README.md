@@ -23,7 +23,7 @@ $env:PYTHONPATH = "$PWD\.deps"
 python main.py --limit 10
 ```
 
-This writes an HTML report under:
+This writes both HTML and Markdown reports under:
 
 ```text
 latest_news_reports/
@@ -33,6 +33,7 @@ Report filenames include the run date/time and `latest news`, for example:
 
 ```text
 2026-06-06 135115 latest news.html
+2026-06-06 135115 latest news.md
 ```
 
 By default the HTML report is opened in Chrome when Chrome is found. If Chrome is not found, the program falls back to the OS default opener.
@@ -49,20 +50,20 @@ python main.py --limit 10 --skip-articles
 # Change the report folder
 python main.py --limit 10 --output-dir reports
 
-# Output as Markdown (.md) instead of HTML (.html)
+# Open the Markdown report after writing both HTML and Markdown
 python main.py --limit 10 --format markdown
 
 # Disable auto-organization into race weekend folders
 python main.py --limit 10 --no-organize
 
-# Markdown output with other options combined
+# Markdown-open mode with other options combined
 python main.py --limit 5 --format markdown --skip-articles --output-dir reports
 
 # Run unit tests
 python main.py --unit-test
 ```
 
-> `--format` 預設為 `html`。設為 `markdown` 時會產出純 `.md` 檔，同樣自動用 Chrome 開啟（需安裝 Markdown 擴充套件）。
+> Scraping now always writes both `.html` and `.md`. `--format` only decides which file is opened automatically.
 
 ## Quick Overview 快速理解
 
@@ -122,7 +123,7 @@ motogp_scraper/
   rss.py             # RSS/Atom parser
   runner.py          # MotoGPScraper workflow with weighted RSS/HTML selection
   sources.py         # RSS-first source discovery with HTML fallback
-  translator.py      # Placeholder for future LLM translation
+  translator.py      # On-demand OpenAI translation from generated Markdown reports
 tests/
   __init__.py
   conftest.py            # 共用 fixtures（make_news_item, make_article, make_extracted, make_race_entry 等）
@@ -146,20 +147,27 @@ Each configured source is tried in order:
 
 ### Weighted Selection
 
-`MotoGPScraper.latest_news()` uses a weighted selection strategy (`RSS_SHARE = 0.6`):
+`MotoGPScraper.latest_news()` uses a weighted selection strategy (`RSS_SHARE = 0.5`):
 
 1. Split items into RSS-sourced and HTML-sourced groups
 2. Sort each group by publish time (UTC+8), newest first
-3. Allocate ~65% of the limit to RSS items, the rest to HTML items
+3. Allocate 50% of the limit to RSS items, the rest to HTML items
 4. If one group doesn't have enough, overflow goes to the other
 5. Final result is re-sorted by time
+
+Article body fetching normally does **not** rebalance the selected news list. For example, if `--limit 20` selects six GPone articles and one of those pages is blocked later, that blocked article simply has no body in the article section.
+
+There is one lightweight backfill guard for widespread blocking: if fewer than 75% of the requested article bodies are fetched successfully, the CLI asks for a slightly larger candidate list and attempts to add up to 20% more successful article bodies. With `--limit 20`, this means fewer than 15 successful bodies triggers up to four backfill articles.
 
 ### Article Extraction
 
 1. **GPone** (site-specific): dedicated XPath targeting `article/div/section/div` nodes
-2. **trafilatura** (default): intelligent main-content extraction, filters ads and navbars
-3. **lxml paragraph fallback**: extracts long `<p>` paragraphs from `<article>`/`<main>`/`<p>`
-4. **Motorsport.com cleanup**: strips photo galleries, subscription prompts, and comment sections from extracted text
+2. **The Race** (site-specific): dedicated article `section` extraction, excluding embedded latest-stories blocks
+3. **trafilatura** (default): intelligent main-content extraction, filters ads and navbars
+4. **lxml paragraph fallback**: extracts long `<p>` paragraphs from `<article>`/`<main>`/`<p>`
+5. **Motorsport.com cleanup**: strips photo galleries, subscription prompts, and comment sections from extracted text
+
+Bot-protection pages are filtered before they reach the report. Common markers such as `Just a moment...` and `Enable JavaScript and cookies to continue` are treated as `blocked-page`, so the CLI logs a warning and continues with the remaining selected articles.
 
 ### Timezone Handling
 
@@ -167,7 +175,7 @@ All timestamps are converted to **UTC+8** for display. Each source declares its 
 
 ### Report Output
 
-The report pipeline supports two output formats:
+The report pipeline writes two output formats on each scrape:
 
 **HTML（預設）：**
 1. `cli.py` renders a Markdown table + article sections
@@ -176,11 +184,11 @@ The report pipeline supports two output formats:
 4. `reporter.write_report()` saves the HTML file (UTF-8 with BOM for Windows compatibility)
 5. `reporter.open_report_in_chrome()` opens the report in Chrome (or OS default)
 
-**Markdown（`--format markdown`）：**
+**Markdown：**
 1. `cli.py` renders a Markdown table + article sections（表格 Link 欄位使用 `[link](url)` 格式）
 2. `reporter.build_report_markdown()` assembles the full Markdown document
 3. `reporter.write_report_markdown()` saves the raw `.md` file (UTF-8)，不經過 HTML 轉換
-4. 同樣自動用 Chrome 開啟（需安裝 Markdown 擴充套件才能正確渲染）
+4. `--format markdown` only changes which output file is opened automatically
 
 ### Report Auto-Organization
 
@@ -239,10 +247,30 @@ pytest tests/ -v
 | Source | RSS | HTML Fallback | Timezone |
 |--------|-----|---------------|----------|
 | Crash.net MotoGP | Yes | Backup | Europe/London |
-| GPone MotoGP | No | Primary | Europe/Rome |
+| GPone MotoGP EN | No | Primary | Europe/Rome |
+| GPone MotoGP IT | No | Primary | Europe/Rome |
+| GPone MotoGP ES | No | Primary | Europe/Madrid |
+| The Race MotoGP | No | Primary | Europe/London |
 | Motorsport.com MotoGP | Yes | Backup | UTC |
 | Motorsport.com ES MotoGP | Yes | Backup | Europe/Madrid |
 
 ## Translation Hook
 
-LLM translation is intentionally not implemented yet. `motogp_scraper/translator.py` is reserved for adding that integration later.
+Translations are on-demand so scraping does not spend tokens automatically. First generate a report, then choose a specific article from the generated Markdown file:
+
+```powershell
+python main.py --translate-report "latest_news_reports\2026-06-20 101500 latest news.md" --translate-article 3
+```
+
+The translation prompt is read from `AI_translator_prompt.md`. The OpenAI API key is read from `OPENAI_API_KEY` first, then from local `API_SECRET_KEY.txt`. The secret file is ignored by git.
+
+Useful options:
+
+```powershell
+python main.py --translate-report "report.md" --translate-article 3 --translate-model gpt-5
+python main.py --translate-report "report.md" --translate-article 2,5,7,14
+python main.py --translate-report "report.md" --translate-article 3 --translation-output-dir translated_reports
+python main.py --translate-report "report.md" --translate-article 3 --no-open
+```
+
+Translation output is HTML only. When multiple article numbers are provided, each article is translated with a separate API call and combined into one HTML file.

@@ -97,6 +97,7 @@ def make_article(make_news_item):
         text: str = "Article body content.",
         extraction_method: str = "trafilatura",
         extracted_at: datetime | None = None,
+        image_url: str | None = None,
     ) -> Article:
         item = make_news_item(url, title=title)
         return Article(
@@ -104,6 +105,7 @@ def make_article(make_news_item):
             text=text,
             extraction_method=extraction_method,
             extracted_at=extracted_at or datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc),
+            image_url=image_url,
         )
 
     return _factory

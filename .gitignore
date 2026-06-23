@@ -2,5 +2,6 @@
 .deps_ext/
 .venv/
 latest_news_reports/
+API_SECRET_KEY.txt
 __pycache__/
 *.py[cod]

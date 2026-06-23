@@ -19,6 +19,7 @@ reporter.py - 報告生成器（HTML 與 Markdown 雙格式輸出）
 - _format_table_cell()       - 表格中的 URL 變成可點擊連結
 - _extract_article_heading_ids() - 從 Markdown 預先掃描文章標題 ID，供表格錨點使用
 - _render_metadata_line()    - Source/URL/Published 做成 metadata block
+- _copy_script()             - 複製內文功能的 JavaScript 程式碼
 - _report_css()              - 報告的 CSS 樣式（嵌入 HTML 中）
 - _find_chrome()             - 尋找 Windows Chrome 安裝位置
 
@@ -87,6 +88,9 @@ def build_report_html(markdown: str, *, title: str = "MotoGP Latest News") -> st
             '  <main class="page">',
             body_html,
             "  </main>",
+            "  <script>",
+            _copy_script(),
+            "  </script>",
             "</body>",
             "</html>",
             "",
@@ -101,6 +105,7 @@ def markdown_report_to_html(markdown: str) -> str:
     HTML 專屬增強功能：
     - 表格 Title 欄位變成錨點連結，點擊可跳轉到對應文章段落
     - 每篇文章結尾自動加入「↑ Back to table」返回目錄連結
+    - 每篇文章加入「Copy」複製按鈕，一鍵複製內文（不含 metadata）
     - 平滑滾動效果（由 CSS scroll-behavior 控制）
     """
     # 預先掃描文章標題 ID，供表格中的 Title 欄位建立錨點連結
@@ -112,6 +117,8 @@ def markdown_report_to_html(markdown: str) -> str:
     index = 0
     # 追蹤目前所在的文章編號，用來插入「返回目錄」連結
     current_article_index: int | None = None
+    # 追蹤文章內文 div 是否已開啟，用來包裹內文段落（供複製功能使用）
+    body_div_open = False
 
     while index < len(lines):
         line = lines[index].rstrip()
@@ -156,6 +163,10 @@ def markdown_report_to_html(markdown: str) -> str:
                 new_index = int(article_match.group(1))
                 if current_article_index is not None and new_index != current_article_index:
                     _flush_paragraph(paragraph_lines, html_parts)
+                    # 關閉文章內文 div
+                    if body_div_open:
+                        html_parts.append('</div>')
+                        body_div_open = False
                     html_parts.append(
                         '<p class="back-to-toc">'
                         '<a href="#latest-news">\u2191 Back to table</a></p>'
@@ -179,13 +190,28 @@ def markdown_report_to_html(markdown: str) -> str:
             continue
 
         # 其他文字都當作文章段落，遇到空白行再輸出成 <p>。
+        # 如果是文章中的第一個內文段落，先插入複製按鈕，再開啟 article-body div
+        if current_article_index is not None and not body_div_open:
+            _flush_paragraph(paragraph_lines, html_parts)
+            html_parts.append(
+                '<button class="copy-btn" onclick="copyArticleBody(this)" title="複製內文">'
+                '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" '
+                'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+                'stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>'
+                '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
+                '<span>Copy</span></button>'
+            )
+            html_parts.append('<div class="article-body">')
+            body_div_open = True
         paragraph_lines.append(line)
         index += 1
 
     _flush_paragraph(paragraph_lines, html_parts)
 
-    # 最後一篇文章也要加入「返回目錄」連結
+    # 最後一篇文章：關閉 article-body div + 加入返回目錄連結
     if current_article_index is not None:
+        if body_div_open:
+            html_parts.append('</div>')
         html_parts.append(
             '<p class="back-to-toc">'
             '<a href="#latest-news">\u2191 Back to table</a></p>'
@@ -359,6 +385,21 @@ def _render_metadata_line(line: str) -> str:
     key, value = line.split(":", 1)
     key_html = html.escape(key.strip())
     value = value.strip()
+    if key.strip() == "Image":
+        if not value:
+            return (
+                '<p class="meta image-meta"><strong>Image:</strong> '
+                '<span class="meta-empty">No image found</span></p>'
+            )
+        escaped = html.escape(value)
+        return (
+            '<p class="meta image-meta"><strong>Image:</strong> '
+            '<span class="image-action">'
+            f'<span class="image-preview" aria-hidden="true"><img src="{escaped}" alt=""></span>'
+            f'<button type="button" class="image-btn" onclick="downloadArticleImage(event, this)" '
+            f'data-image-url="{escaped}"><span>查看並下載圖片</span></button>'
+            '</span></p>'
+        )
     if value.startswith(("http://", "https://")):
         value_html = (
             f'<a href="{html.escape(value)}" target="_blank" rel="noopener noreferrer">'
@@ -390,7 +431,7 @@ def _is_table_start(lines: list[str], index: int) -> bool:
 
 def _is_metadata_line(line: str) -> bool:
     """判斷文章 metadata 行。"""
-    return line.startswith(("Generated at:", "Source:", "URL:", "Published At", "Extraction:"))
+    return line.startswith(("Generated at:", "Source:", "URL:", "Published At", "Extraction:", "Image:"))
 
 
 def _slugify(value: str) -> str:
@@ -538,7 +579,107 @@ def _report_css() -> str:
     a.toc-link {
       font-weight: 600;
     }
-    /* 返回目錄按鈕樣式 */
+    /* 複製按鈕樣式（仿 ChatGPT 複製回應按鈕，靠左對齊在 metadata 與內文之間） */
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin: 8px 0 4px;
+      padding: 4px 8px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      transition: background 0.15s, color 0.15s;
+    }
+    .copy-btn:hover {
+      background: #eef2f6;
+      color: var(--text);
+    }
+    .copy-btn.copied {
+      color: #16a34a;
+    }
+    .copy-btn.copied span {
+      font-weight: 600;
+    }
+    .copy-btn svg {
+      flex-shrink: 0;
+    }
+    .image-meta {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .image-action {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      isolation: isolate;
+    }
+    .image-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 7px 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      background: #e8eef5;
+      color: #243244;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.15;
+      text-decoration: none;
+      box-shadow: inset 0 -1px 0 rgba(16, 24, 40, 0.06);
+      transition: background 0.15s, border-color 0.15s, transform 0.15s;
+    }
+    .image-btn:hover {
+      background: #dbe5ef;
+      border-color: #b8c7d8;
+      color: #16202a;
+      text-decoration: none;
+      transform: translateY(-1px);
+    }
+    .image-preview {
+      position: absolute;
+      left: 0;
+      bottom: calc(100% + 10px);
+      z-index: 10;
+      width: min(420px, calc(100vw - 48px));
+      max-height: 460px;
+      padding: 6px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 12px 28px rgba(16, 24, 40, 0.18);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(4px);
+      transition: opacity 0.14s ease, transform 0.14s ease;
+    }
+    .image-preview img {
+      display: block;
+      width: 100%;
+      max-height: 450px;
+      object-fit: cover;
+      border-radius: 5px;
+      background: #eef2f6;
+    }
+    .image-action:hover .image-preview,
+    .image-action:focus-within .image-preview {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .meta-empty {
+      color: var(--muted);
+    }
+    /* 返回目錄連結樣式 */
     .back-to-toc {
       margin-top: 8px;
     }
@@ -548,6 +689,100 @@ def _report_css() -> str:
     }
     .back-to-toc a:hover {
       color: var(--accent);
+    }
+    """.strip()
+
+
+def _copy_script() -> str:
+    """複製文章內文功能的 JavaScript，嵌入 HTML 報告底部。"""
+    return """
+    function copyArticleBody(btn) {
+      // 按鈕在 .article-body 正前方，直接取下一個兄弟元素
+      var body = btn.nextElementSibling;
+      while (body && !body.classList.contains('article-body')) {
+        body = body.nextElementSibling;
+      }
+      if (!body) return;
+
+      var heading = findArticleHeading(btn);
+      var title = heading ? heading.innerText.replace(/^\\d+\\.\\s*/, '').trim() : '';
+      var bodyText = body.innerText.trim();
+      var text = title ? title + '\\n\\n' + bodyText : bodyText;
+      navigator.clipboard.writeText(text).then(function() {
+        var label = btn.querySelector('span');
+        var orig = label.textContent;
+        label.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(function() {
+          label.textContent = orig;
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    }
+
+    function findArticleHeading(btn) {
+      var current = btn.previousElementSibling;
+      while (current) {
+        if (current.classList && current.classList.contains('article-heading')) {
+          return current;
+        }
+        current = current.previousElementSibling;
+      }
+      return null;
+    }
+
+    function downloadArticleImage(event, link) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      var url = link.getAttribute('data-image-url');
+      if (!url) return false;
+
+      window.open(url, '_blank', 'noopener');
+
+      fetch(url, { mode: 'cors', credentials: 'omit' })
+        .then(function(response) {
+          if (!response.ok) {
+            throw new Error('Image request failed');
+          }
+          return response.blob();
+        })
+        .then(function(blob) {
+          var objectUrl = URL.createObjectURL(blob);
+          triggerImageDownload(objectUrl, imageFilenameFromUrl(url));
+          setTimeout(function() {
+            URL.revokeObjectURL(objectUrl);
+          }, 30000);
+        })
+        .catch(function() {
+          triggerImageDownload(url, imageFilenameFromUrl(url), true);
+        });
+
+      return false;
+    }
+
+    function triggerImageDownload(url, filename, openInNewTabIfBlocked) {
+      var downloadLink = document.createElement('a');
+      downloadLink.href = url;
+      downloadLink.download = filename || 'motogp-image';
+      downloadLink.rel = 'noopener noreferrer';
+      if (openInNewTabIfBlocked) {
+        downloadLink.target = '_blank';
+      }
+      downloadLink.style.display = 'none';
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    }
+
+    function imageFilenameFromUrl(url) {
+      try {
+        var path = new URL(url).pathname;
+        var filename = path.split('/').filter(Boolean).pop();
+        return filename || 'motogp-image';
+      } catch (error) {
+        return 'motogp-image';
+      }
     }
     """.strip()
 

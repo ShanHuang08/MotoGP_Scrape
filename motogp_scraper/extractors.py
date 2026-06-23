@@ -37,6 +37,21 @@ from .datetime_utils import parse_datetime
 from .models import ExtractedContent
 
 
+BLOCKED_PAGE_MARKERS = (
+    "just a moment...",
+    "enable javascript and cookies to continue",
+    "checking if the site connection is secure",
+    "cf-browser-verification",
+    "challenge-platform",
+)
+
+
+def is_blocked_page(markup_or_text: str) -> bool:
+    """Return True when a site serves a bot-protection page instead of an article."""
+    normalized = " ".join((markup_or_text or "").casefold().split())
+    return any(marker in normalized for marker in BLOCKED_PAGE_MARKERS)
+
+
 # ============================================================
 # normalize_url - 將 URL 正規化
 # ============================================================
@@ -125,6 +140,53 @@ def extract_title_with_lxml(markup: str, xpaths: Iterable[str] = ()) -> str | No
     return None
 
 
+def extract_image_url_with_lxml(markup: str, *, base_url: str) -> str | None:
+    """Extract the primary image URL from supported article pages."""
+    document = parse_html_document(markup)
+    host = urlparse(base_url).netloc.lower()
+
+    if "crash.net" in host:
+        site_xpaths = ("//*[@id='lbs-content']/div[1]/div[1]/div/figure/picture/img",)
+    elif "gpone.com" in host:
+        site_xpaths = ("//*[@id='block-gpone-content']/article/figure/a/picture/img",)
+    elif "the-race.com" in host:
+        site_xpaths = ("//*[@id='lt-user-email']/div[1]/main/article/header/figure/img",)
+    elif "motorsport.com" in host:
+        site_xpaths = ("//*[@id='main-content']/div[3]/article/div/div/div[2]/div[1]/picture/img",)
+    else:
+        site_xpaths = ()
+
+    fallback_xpaths = (
+        "//meta[@property='og:image']/@content",
+        "//meta[@name='twitter:image']/@content",
+    )
+    for xpath in site_xpaths + fallback_xpaths:
+        for raw_value in document.xpath(xpath):
+            if isinstance(raw_value, str):
+                candidates = (raw_value,)
+            else:
+                candidates = (
+                    raw_value.get("src", ""),
+                    raw_value.get("data-src", ""),
+                    _first_srcset_url(raw_value.get("srcset", "")),
+                    _first_srcset_url(raw_value.get("data-srcset", "")),
+                )
+
+            for candidate in candidates:
+                url = normalize_url(base_url, candidate)
+                if url:
+                    return url
+
+    return None
+
+
+def _first_srcset_url(srcset: str) -> str:
+    first_candidate = (srcset or "").split(",", 1)[0].strip()
+    if not first_candidate:
+        return ""
+    return first_candidate.split(maxsplit=1)[0]
+
+
 # ============================================================
 # extract_published_at_with_lxml - 從 HTML 中提取文章發佈日期
 # ============================================================
@@ -148,6 +210,7 @@ def extract_published_at_with_lxml(
         "//meta[@name='date']/@content",
         "//meta[@itemprop='datePublished']/@content",
         "//time/@datetime",
+        "//time/text()",
         "//*[contains(concat(' ', normalize-space(@class), ' '), ' date ')]/text()",
         "//*[contains(concat(' ', normalize-space(@class), ' '), ' submitted ')]/text()",
     )
@@ -228,6 +291,8 @@ def extract_article_with_trafilatura(
     cleaned = text.strip()
     if not cleaned:
         return None
+    if is_blocked_page(cleaned):
+        return ExtractedContent(text="", method="blocked-page")
     return ExtractedContent(text=cleaned, method="trafilatura")
 
 
@@ -246,10 +311,10 @@ def extract_gpone_article_sections(markup: str) -> ExtractedContent | None:
     paragraphs: list[str] = []
 
     for section_node in section_nodes:
-        # 每個 section 的 div[2] 可能直接有文字，也可能拆成多個 <p>，兩種都要支援。
-        paragraph_nodes = section_node.xpath(".//p")
-        if paragraph_nodes:
-            candidates = [" ".join(node.text_content().split()) for node in paragraph_nodes]
+        # GPone 的大字體重點常放在 h2/strong，正文在 p；照 DOM 順序一起保留。
+        content_nodes = section_node.xpath(".//h2 | .//p")
+        if content_nodes:
+            candidates = [" ".join(node.text_content().split()) for node in content_nodes]
         else:
             candidates = [" ".join(section_node.text_content().split())]
 
@@ -261,6 +326,27 @@ def extract_gpone_article_sections(markup: str) -> ExtractedContent | None:
     if not text:
         return None
     return ExtractedContent(text=text, method="gpone-lxml-sections")
+
+
+def extract_the_race_article_section(markup: str) -> ExtractedContent | None:
+    """Extract The Race article body and skip the embedded latest-stories block."""
+    document = parse_html_document(markup)
+    content_nodes = document.xpath(
+        "//*[@id='lt-user-email']/div[1]/main/article/section"
+        "//*[self::h2 or self::h3 or self::p or self::li or self::blockquote]"
+        "[not(ancestor::section[contains(concat(' ', normalize-space(@class), ' '), ' latest-stories ')])]"
+    )
+    paragraphs: list[str] = []
+
+    for node in content_nodes:
+        text = " ".join(node.text_content().split())
+        if text and text not in paragraphs:
+            paragraphs.append(text)
+
+    body = "\n\n".join(paragraphs).strip()
+    if not body:
+        return None
+    return ExtractedContent(text=body, method="the-race-lxml-section")
 
 
 def can_extract_with_trafilatura(markup: str, *, url: str | None = None) -> bool:
@@ -295,11 +381,20 @@ def extract_article_with_lxml_fallback(markup: str) -> ExtractedContent | None:
 # 4. 回傳空字串 method="empty"
 # ============================================================
 def extract_article_text(markup: str, *, url: str | None = None) -> ExtractedContent:
-    # GPone 的主文不適合完全依賴 trafilatura，優先使用站內固定 section 結構。
-    if url and "gpone.com" in urlparse(url).netloc:
-        gpone_extracted = extract_gpone_article_sections(markup)
-        if gpone_extracted:
-            return gpone_extracted
+    if is_blocked_page(markup):
+        return ExtractedContent(text="", method="blocked-page")
+
+    if url:
+        host = urlparse(url).netloc
+        # GPone 的主文不適合完全依賴 trafilatura，優先使用站內固定 section 結構。
+        if "gpone.com" in host:
+            gpone_extracted = extract_gpone_article_sections(markup)
+            if gpone_extracted:
+                return gpone_extracted
+        if "the-race.com" in host:
+            the_race_extracted = extract_the_race_article_section(markup)
+            if the_race_extracted:
+                return the_race_extracted
 
     extracted = extract_article_with_trafilatura(markup, url=url)
     if extracted:

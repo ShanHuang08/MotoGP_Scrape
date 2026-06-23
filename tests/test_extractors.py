@@ -18,10 +18,13 @@ import pytest
 
 from motogp_scraper.extractors import (
     normalize_url,
+    extract_links_with_lxml,
+    extract_image_url_with_lxml,
     extract_published_at_with_lxml,
     remove_motorsport_tail_noise,
     extract_article_text,
     clean_article_text_for_site,
+    is_blocked_page,
 )
 from motogp_scraper.models import ExtractedContent
 
@@ -87,6 +90,38 @@ class TestNormalizeUrl:
     def test_url_resolution_variants(self, base: str, href: str, expected: str) -> None:
         """參數化測試：多種 URL 解析情境"""
         assert normalize_url(base, href) == expected
+
+
+class TestExtractLinksWithLxml:
+    """extract_links_with_lxml - listing link extraction."""
+
+    def test_the_race_listing_xpaths(self) -> None:
+        markup = """
+        <div id="lt-user-email"><div><section><div>
+          <div></div>
+          <div>
+            <article><a href="/motogp/lead-story/"><div><h3>Lead story</h3></div></a></article>
+          </div>
+          <div>
+            <article><a href="/motogp/second-story/"><div><h3>Second story</h3></div></a></article>
+            <article><a href="/motogp/third-story/"><div><h3>Third story</h3></div></a></article>
+          </div>
+        </div></section></div></div>
+        """
+        links = extract_links_with_lxml(
+            markup,
+            base_url="https://www.the-race.com/motogp",
+            xpaths=(
+                "//*[@id='lt-user-email']/div/section/div[1]/div[2]/article/a/@href",
+                "//*[@id='lt-user-email']/div/section/div[1]/div[3]/article[1]/a/@href",
+                "//*[@id='lt-user-email']/div/section/div[1]/div[3]/article[2]/a/@href",
+            ),
+        )
+        assert links == [
+            "https://www.the-race.com/motogp/lead-story/",
+            "https://www.the-race.com/motogp/second-story/",
+            "https://www.the-race.com/motogp/third-story/",
+        ]
 
 
 # ============================================================
@@ -240,6 +275,67 @@ class TestExtractPublishedAt:
         assert result.year == 2024
 
 
+class TestExtractImageUrl:
+    """extract_image_url_with_lxml - article hero image extraction."""
+
+    def test_crash_xpath_image(self) -> None:
+        markup = """
+        <div id="lbs-content"><div><div><div>
+          <figure><picture><img src="/images/crash.jpg"></picture></figure>
+        </div></div></div></div>
+        """
+        result = extract_image_url_with_lxml(
+            markup,
+            base_url="https://www.crash.net/motogp/news/test",
+        )
+        assert result == "https://www.crash.net/images/crash.jpg"
+
+    def test_gpone_xpath_image(self) -> None:
+        markup = """
+        <div id="block-gpone-content">
+          <article><figure><a><picture><img src="https://cdn.gpone.com/main.jpg"></picture></a></figure></article>
+        </div>
+        """
+        result = extract_image_url_with_lxml(
+            markup,
+            base_url="https://www.gpone.com/en/news/test",
+        )
+        assert result == "https://cdn.gpone.com/main.jpg"
+
+    def test_motorsport_xpath_srcset_image(self) -> None:
+        markup = """
+        <main id="main-content"><div></div><div></div><div>
+          <article><div><div><div></div><div><picture>
+            <img srcset="/photo-small.jpg 400w, /photo-large.jpg 1200w">
+          </picture></div></div></div></article>
+        </div></main>
+        """
+        result = extract_image_url_with_lxml(
+            markup,
+            base_url="https://www.motorsport.com/motogp/news/test",
+        )
+        assert result == "https://www.motorsport.com/photo-small.jpg"
+
+    def test_the_race_xpath_image(self) -> None:
+        markup = """
+        <div id="lt-user-email"><div>
+          <main><article><header>
+            <figure><img src="/cdn-cgi/image/width=1200/images/hero.jpg"></figure>
+          </header></article></main>
+        </div></div>
+        """
+        result = extract_image_url_with_lxml(
+            markup,
+            base_url="https://www.the-race.com/motogp/test-story/",
+        )
+        assert result == "https://www.the-race.com/cdn-cgi/image/width=1200/images/hero.jpg"
+
+    def test_falls_back_to_open_graph_image(self) -> None:
+        markup = '<html><head><meta property="og:image" content="/fallback.jpg"></head></html>'
+        result = extract_image_url_with_lxml(markup, base_url="https://example.com/article")
+        assert result == "https://example.com/fallback.jpg"
+
+
 # ============================================================
 # remove_motorsport_tail_noise 測試
 # ============================================================
@@ -326,6 +422,23 @@ class TestExtractArticleText:
         assert result.method == "empty"
         assert result.text == ""
 
+    def test_blocked_page_returns_blocked_method(self) -> None:
+        html = """
+        <html>
+          <head><title>Just a moment...</title></head>
+          <body>Enable JavaScript and cookies to continue</body>
+        </html>
+        """
+        result = extract_article_text(
+            html,
+            url="https://www.gpone.com/it/2026/06/23/motogp/example.html",
+        )
+        assert result.method == "blocked-page"
+        assert result.text == ""
+
+    def test_blocked_text_marker_detected(self) -> None:
+        assert is_blocked_page("Enable JavaScript and cookies to continue")
+
     def test_article_with_paragraphs(self) -> None:
         """有 <article> 和 <p> 的 HTML 能提取內文"""
         html = """
@@ -355,11 +468,76 @@ class TestExtractArticleText:
         result = extract_article_text(html, url="https://www.gpone.com/en/news/article")
         assert result.method == "gpone-lxml-sections"
 
+    def test_gpone_extractor_includes_h2_emphasis_text(self) -> None:
+        """GPone 的大字體 h2/strong 內容也要被抽進正文。"""
+        html = """
+        <html><body>
+        <div id="block-gpone-content">
+            <article><div>
+                <section><div></div><div>
+                    <h2><strong>Large intro line one.</strong></h2>
+                    <h2><strong>Large intro line two.</strong></h2>
+                    <p>Regular paragraph one.</p>
+                </div></section>
+                <section><div></div><div>
+                    <h2>Large section two line one.</h2>
+                    <h2><strong>Large section two line two.</strong></h2>
+                    <h2><strong>Large section two line three.</strong></h2>
+                    <p>Regular paragraph two.</p>
+                </div></section>
+            </div></article>
+        </div>
+        </body></html>
+        """
+        result = extract_article_text(html, url="https://www.gpone.com/en/news/article")
+        assert result.method == "gpone-lxml-sections"
+        assert result.text.splitlines() == [
+            "Large intro line one.",
+            "",
+            "Large intro line two.",
+            "",
+            "Regular paragraph one.",
+            "",
+            "Large section two line one.",
+            "",
+            "Large section two line two.",
+            "",
+            "Large section two line three.",
+            "",
+            "Regular paragraph two.",
+        ]
+
     def test_non_gpone_url_skips_gpone_extractor(self) -> None:
         """非 gpone.com 的 URL 不使用 GPone 提取器"""
         html = "<html><body><article><p>Normal article text here.</p></article></body></html>"
         result = extract_article_text(html, url="https://crash.net/motogp/news")
         assert result.method != "gpone-lxml-sections"
+
+    def test_the_race_url_uses_section_extractor(self) -> None:
+        html = """
+        <html><body>
+        <div id="lt-user-email"><div>
+          <main><article>
+            <section>
+              <p>First The Race paragraph with enough useful article content.</p>
+              <h2>Technical background</h2>
+              <p>Second The Race paragraph with the key MotoGP explanation.</p>
+              <section class="latest-stories latest-stories-mid">
+                <article><a><h3>Recommended story should not appear.</h3></a></article>
+              </section>
+            </section>
+          </article></main>
+        </div></div>
+        </body></html>
+        """
+        result = extract_article_text(
+            html,
+            url="https://www.the-race.com/motogp/ducatis-trick-ride-height-device-addition-revealed/",
+        )
+        assert result.method == "the-race-lxml-section"
+        assert "First The Race paragraph" in result.text
+        assert "Technical background" in result.text
+        assert "Recommended story" not in result.text
 
 
 # ============================================================

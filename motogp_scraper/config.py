@@ -37,7 +37,7 @@ DEFAULT_SOURCES: tuple[SourceConfig, ...] = (
     ),
     # ---- 來源 2: GPone MotoGP（無 RSS，純網頁掃描）----
     SourceConfig(
-        name="GPone MotoGP",
+        name="GPone MotoGP EN",
         listing_url="https://www.gpone.com/en/news/ontrack/motogp",
         article_link_xpaths=(
             "//a[contains(@href, '/en/news/ontrack/motogp/')]/@href",
@@ -45,6 +45,45 @@ DEFAULT_SOURCES: tuple[SourceConfig, ...] = (
             "//article//a/@href",
         ),
         timezone_name="Europe/Rome",
+    ),
+    # ---- 來源 3: GPone MotoGP IT（無 RSS，純網頁掃描）----
+    SourceConfig(
+        name="GPone MotoGP IT",
+        listing_url="https://www.gpone.com/it/news/ontrack/motogp",
+        article_link_xpaths=(
+            "//a[contains(@href, '/it/news/ontrack/motogp/')]/@href",
+            "//a[contains(@href, '/it/20') and contains(@href, '/motogp/')]/@href",
+            "//article//a/@href",
+        ),
+        timezone_name="Europe/Rome",
+    ),
+    # ---- 來源 4: GPone MotoGP ES（無 RSS，純網頁掃描）----
+    SourceConfig(
+        name="GPone MotoGP ES",
+        listing_url="https://www.gpone.com/es/news/ontrack/motogp",
+        article_link_xpaths=(
+            "//a[contains(@href, '/es/news/ontrack/motogp/')]/@href",
+            "//a[contains(@href, '/es/20') and contains(@href, '/motogp/')]/@href",
+            "//article//a/@href",
+        ),
+        timezone_name="Europe/Madrid",
+    ),
+    # ---- 來源 5: The Race MotoGP（無 RSS，純網頁掃描）----
+    SourceConfig(
+        name="The Race MotoGP",
+        listing_url="https://www.the-race.com/motogp",
+        article_link_xpaths=(
+            "//*[@id='lt-user-email']/div/section/div[1]/div[2]/article/a/@href",
+            "//*[@id='lt-user-email']/div/section/div[1]/div[3]/article[1]/a/@href",
+            "//*[@id='lt-user-email']/div/section/div[1]/div[3]/article[2]/a/@href",
+            "//a[contains(@href, '/motogp/') and not(contains(@href, '#'))]/@href",
+        ),
+        title_xpaths=(
+            "//*[@id='lt-user-email']/div[1]/main/article/header/h1",
+            "//main//article//header//h1",
+        ),
+        max_listing_links=12,
+        timezone_name="Europe/London",
     ),
     # ---- 來源 3: Motorsport.com MotoGP（英文版）----
     SourceConfig(

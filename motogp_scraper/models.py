@@ -80,6 +80,7 @@ class Article:
     text: str
     extraction_method: str
     extracted_at: datetime
+    image_url: str | None = None
 
 
 # ============================================================

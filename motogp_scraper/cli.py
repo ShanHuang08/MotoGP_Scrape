@@ -35,8 +35,10 @@ cli.py - 命令行介面（Command Line Interface）
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from .datetime_utils import to_utc_plus_8
 from .models import Article, NewsItem
@@ -48,7 +50,16 @@ from .reporter import (
     write_report,
     write_report_markdown,
 )
-from .runner import MotoGPScraper
+from .translator import (
+    DEFAULT_API_KEY_FILE,
+    DEFAULT_PROMPT_FILE,
+    DEFAULT_TRANSLATION_MODEL,
+    TranslationError,
+    translate_articles_from_markdown,
+)
+
+ARTICLE_BACKFILL_TRIGGER_RATIO = 0.75
+ARTICLE_BACKFILL_SHARE = 0.20
 
 
 # ============================================================
@@ -114,12 +125,33 @@ def render_articles(articles: list[Article]) -> str:
                     f"URL: {article.item.url}",
                     f"Published At (UTC+8): {format_datetime(article.item.published_at)}",
                     f"Extraction: {article.extraction_method}",
+                    f"Image: {article.image_url or ''}",
                     "",
                     body,
                 ]
             )
         )
     return "\n\n".join(sections)
+
+
+def parse_article_indexes(value: str) -> list[int]:
+    """Parse comma-separated article numbers for on-demand translation."""
+    indexes: list[int] = []
+    for part in value.split(","):
+        stripped = part.strip()
+        if not stripped:
+            continue
+        try:
+            index = int(stripped)
+        except ValueError as exc:
+            raise TranslationError(f"Invalid article number: {stripped}") from exc
+        if index <= 0:
+            raise TranslationError(f"Article number must be positive: {index}")
+        indexes.append(index)
+
+    if not indexes:
+        raise TranslationError("At least one article number is required.")
+    return indexes
 
 
 # ============================================================
@@ -161,6 +193,33 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Write the report but do not open it in Chrome/browser.",
     )
+    parser.add_argument(
+        "--translate-report",
+        help="Translate one article from an existing latest-news Markdown report.",
+    )
+    parser.add_argument(
+        "--translate-article",
+        help="Article number(s) to translate from --translate-report, e.g. 3 or 2,5,7,14.",
+    )
+    parser.add_argument(
+        "--translate-model",
+        default=DEFAULT_TRANSLATION_MODEL,
+        help=f"OpenAI model for translation (default: {DEFAULT_TRANSLATION_MODEL}).",
+    )
+    parser.add_argument(
+        "--api-key-file",
+        default=DEFAULT_API_KEY_FILE,
+        help=f"Local OpenAI API key file (default: {DEFAULT_API_KEY_FILE}).",
+    )
+    parser.add_argument(
+        "--translation-prompt",
+        default=DEFAULT_PROMPT_FILE,
+        help=f"Translation prompt file (default: {DEFAULT_PROMPT_FILE}).",
+    )
+    parser.add_argument(
+        "--translation-output-dir",
+        help="Directory for translated HTML output. Defaults to the Markdown report folder.",
+    )
     # --unit-test: 執行單元測試後直接結束，不進行爬蟲流程
     parser.add_argument(
         "--unit-test",
@@ -190,6 +249,34 @@ def main(argv: list[str] | None = None) -> int:
         success = run_all_tests(verbosity=2)
         return 0 if success else 1
 
+    if args.translate_report:
+        if args.translate_article is None:
+            print(
+                "[ERROR] --translate-article is required with --translate-report.",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            article_indexes = parse_article_indexes(args.translate_article)
+            report_path = translate_articles_from_markdown(
+                args.translate_report,
+                article_indexes=article_indexes,
+                model=args.translate_model,
+                api_key_file=args.api_key_file,
+                prompt_file=args.translation_prompt,
+                output_dir=args.translation_output_dir,
+            )
+        except TranslationError as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 1
+
+        print(f"\nTranslated HTML saved: {Path(report_path).resolve()}")
+        if not args.no_open:
+            open_report_in_chrome(report_path)
+        return 0
+
+    from .runner import MotoGPScraper
+
     scraper = MotoGPScraper()
 
     # 步驟 0：根據行事曆檢查今天是否在某站比賽的窗口內，
@@ -202,8 +289,6 @@ def main(argv: list[str] | None = None) -> int:
 
     items = scraper.latest_news(limit=args.limit)
     # 根據輸出格式調整表格渲染方式（markdown 模式會使用 [link](url) 格式）
-    table_markdown = render_news_table(items, format=args.format)
-
     articles: list[Article] = []
     articles_markdown = ""
 
@@ -214,7 +299,38 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as exc:
                 print(f"\n[WARN] Failed to fetch article {item.url}: {exc}", file=sys.stderr)
 
+        backfill_threshold = math.ceil(args.limit * ARTICLE_BACKFILL_TRIGGER_RATIO)
+        if args.limit > 0 and len(articles) < backfill_threshold:
+            backfill_target = max(1, math.ceil(args.limit * ARTICLE_BACKFILL_SHARE))
+            expanded_limit = args.limit + (backfill_target * 2)
+            seen_urls = {item.url.rstrip("/") for item in items}
+            backfilled = 0
+
+            print(
+                f"\n[INFO] Only fetched {len(articles)}/{args.limit} article bodies; "
+                f"trying up to {backfill_target} backfill article(s).",
+                file=sys.stderr,
+            )
+            for item in scraper.latest_news(limit=expanded_limit):
+                normalized_url = item.url.rstrip("/")
+                if normalized_url in seen_urls:
+                    continue
+                seen_urls.add(normalized_url)
+                try:
+                    article = scraper.fetch_article(item)
+                except Exception as exc:
+                    print(f"\n[WARN] Failed to fetch article {item.url}: {exc}", file=sys.stderr)
+                    continue
+
+                items.append(item)
+                articles.append(article)
+                backfilled += 1
+                if backfilled >= backfill_target:
+                    break
+
         articles_markdown = render_articles(articles)
+
+    table_markdown = render_news_table(items, format=args.format)
 
     generated_at = datetime.now()
     report_markdown = build_report_markdown(
@@ -223,20 +339,15 @@ def main(argv: list[str] | None = None) -> int:
         generated_at=generated_at,
     )
 
-    # 根據 --format 參數決定輸出 HTML 或 Markdown 報告
-    # 使用 output_dir（可能已被收納器改為比賽資料夾路徑）
-    if args.format == "markdown":
-        # Markdown 模式：直接寫出 .md 檔案，不經過 HTML 轉換
-        report_path = write_report_markdown(
-            report_markdown, output_dir=output_dir, now=generated_at
-        )
-        print(f"\nMarkdown report saved: {report_path.resolve()}")
-    else:
-        # HTML 模式（預設）：轉成 HTML 報告並寫出
-        report_path = write_report(
-            report_markdown, output_dir=output_dir, now=generated_at
-        )
-        print(f"\nHTML report saved: {report_path.resolve()}")
+    # 原文報告同時輸出 HTML（給人讀）與 Markdown（給 AI 翻譯讀）。
+    html_report_path = write_report(report_markdown, output_dir=output_dir, now=generated_at)
+    markdown_report_path = write_report_markdown(
+        report_markdown, output_dir=output_dir, now=generated_at
+    )
+    print(f"\nHTML report saved: {html_report_path.resolve()}")
+    print(f"Markdown report saved: {markdown_report_path.resolve()}")
+
+    report_path = markdown_report_path if args.format == "markdown" else html_report_path
 
     # 兩種格式都自動用瀏覽器開啟（除非指定 --no-open）
     # Markdown 檔需要有瀏覽器 Markdown 擴充套件才能正確渲染
