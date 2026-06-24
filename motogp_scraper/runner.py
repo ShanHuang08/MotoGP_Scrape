@@ -24,7 +24,9 @@ from __future__ import annotations
 import math
 import sys
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
+from .browser_fallback import fetch_gpone_article_with_playwright
 from .config import DEFAULT_SOURCES
 from .datetime_utils import to_utc_plus_8
 from .extractors import extract_article_text, extract_image_url_with_lxml
@@ -75,7 +77,12 @@ class MotoGPScraper:
         markup = item.raw_meta.get("article_markup") or fetch_text(item.url)
         extracted = extract_article_text(markup, url=item.url)
         if extracted.method == "blocked-page":
-            raise BlockedArticleError(f"Blocked page received for {item.url}")
+            fallback_markup = self._fetch_blocked_article_with_browser(item.url)
+            if fallback_markup:
+                markup = fallback_markup
+                extracted = extract_article_text(markup, url=item.url)
+            if extracted.method == "blocked-page":
+                raise BlockedArticleError(f"Blocked page received for {item.url}")
         image_url = extract_image_url_with_lxml(markup, base_url=item.url)
         return Article(
             item=item,
@@ -84,6 +91,13 @@ class MotoGPScraper:
             extracted_at=datetime.now(timezone.utc),
             image_url=image_url,
         )
+
+    @staticmethod
+    def _fetch_blocked_article_with_browser(url: str) -> str | None:
+        host = urlparse(url).netloc.lower()
+        if "gpone.com" not in host:
+            return None
+        return fetch_gpone_article_with_playwright(url)
 
     # ============================================================
     # _select_weighted_latest - 加權選取最新新聞（私有方法）

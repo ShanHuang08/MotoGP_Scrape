@@ -76,8 +76,13 @@ class TestFetchArticle:
     """fetch_article - article body fetching and filtering."""
 
     def test_blocked_page_raises_without_article(
-        self, scraper: MotoGPScraper, make_news_item
+        self, scraper: MotoGPScraper, make_news_item, monkeypatch
     ) -> None:
+        monkeypatch.setattr(
+            MotoGPScraper,
+            "_fetch_blocked_article_with_browser",
+            staticmethod(lambda url: None),
+        )
         item = make_news_item(
             "https://www.gpone.com/it/2026/06/23/motogp/example.html",
             discovery_method="html",
@@ -91,6 +96,39 @@ class TestFetchArticle:
 
         with pytest.raises(BlockedArticleError):
             scraper.fetch_article(item)
+
+    def test_gpone_blocked_page_uses_browser_fallback(
+        self, scraper: MotoGPScraper, make_news_item, monkeypatch
+    ) -> None:
+        fallback_html = """
+        <html><body>
+        <div id="block-gpone-content">
+            <article><div>
+                <section><div></div><div><p>Recovered GPone article body.</p></div></section>
+            </div></article>
+        </div>
+        </body></html>
+        """
+        monkeypatch.setattr(
+            MotoGPScraper,
+            "_fetch_blocked_article_with_browser",
+            staticmethod(lambda url: fallback_html),
+        )
+        item = make_news_item(
+            "https://www.gpone.com/it/2026/06/23/motogp/example.html",
+            discovery_method="html",
+        )
+        item.raw_meta["article_markup"] = """
+        <html>
+          <head><title>Just a moment...</title></head>
+          <body>Enable JavaScript and cookies to continue</body>
+        </html>
+        """
+
+        article = scraper.fetch_article(item)
+
+        assert article.extraction_method == "gpone-lxml-sections"
+        assert article.text == "Recovered GPone article body."
 
 
 # ============================================================

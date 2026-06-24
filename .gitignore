@@ -1,5 +1,7 @@
 .deps/
 .deps_ext/
+.deps_runtime/
+.gpone_browser_profile*/
 .venv/
 latest_news_reports/
 API_SECRET_KEY.txt

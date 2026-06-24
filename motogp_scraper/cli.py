@@ -47,6 +47,7 @@ from .reporter import (
     DEFAULT_REPORT_DIR,
     build_report_markdown,
     open_report_in_chrome,
+    open_url_in_chrome,
     write_report,
     write_report_markdown,
 )
@@ -60,6 +61,7 @@ from .translator import (
 
 ARTICLE_BACKFILL_TRIGGER_RATIO = 0.75
 ARTICLE_BACKFILL_SHARE = 0.20
+GPONE_NEWS_URL = "https://www.gpone.com/en/news/ontrack/motogp"
 
 
 # ============================================================
@@ -291,13 +293,23 @@ def main(argv: list[str] | None = None) -> int:
     # 根據輸出格式調整表格渲染方式（markdown 模式會使用 [link](url) 格式）
     articles: list[Article] = []
     articles_markdown = ""
+    gpone_attempted = 0
+    gpone_fetched = 0
 
     if not args.skip_articles:
         for item in items:
+            is_gpone = "gpone.com" in item.url
+            if is_gpone:
+                gpone_attempted += 1
             try:
-                articles.append(scraper.fetch_article(item))
+                article = scraper.fetch_article(item)
             except Exception as exc:
                 print(f"\n[WARN] Failed to fetch article {item.url}: {exc}", file=sys.stderr)
+                continue
+
+            articles.append(article)
+            if is_gpone:
+                gpone_fetched += 1
 
         backfill_threshold = math.ceil(args.limit * ARTICLE_BACKFILL_TRIGGER_RATIO)
         if args.limit > 0 and len(articles) < backfill_threshold:
@@ -316,21 +328,26 @@ def main(argv: list[str] | None = None) -> int:
                 if normalized_url in seen_urls:
                     continue
                 seen_urls.add(normalized_url)
+                is_gpone = "gpone.com" in item.url
+                if is_gpone:
+                    gpone_attempted += 1
                 try:
                     article = scraper.fetch_article(item)
                 except Exception as exc:
                     print(f"\n[WARN] Failed to fetch article {item.url}: {exc}", file=sys.stderr)
                     continue
 
-                items.append(item)
                 articles.append(article)
+                if is_gpone:
+                    gpone_fetched += 1
                 backfilled += 1
                 if backfilled >= backfill_target:
                     break
 
         articles_markdown = render_articles(articles)
 
-    table_markdown = render_news_table(items, format=args.format)
+    table_items = [article.item for article in articles] if not args.skip_articles else items
+    table_markdown = render_news_table(table_items, format=args.format)
 
     generated_at = datetime.now()
     report_markdown = build_report_markdown(
@@ -353,5 +370,13 @@ def main(argv: list[str] | None = None) -> int:
     # Markdown 檔需要有瀏覽器 Markdown 擴充套件才能正確渲染
     if not args.no_open:
         open_report_in_chrome(report_path)
+
+    if gpone_attempted > 0 and gpone_fetched == 0:
+        print(
+            f"\n[INFO] GPone article bodies all failed ({gpone_attempted} attempted); "
+            f"opening {GPONE_NEWS_URL}",
+            file=sys.stderr,
+        )
+        open_url_in_chrome(GPONE_NEWS_URL)
 
     return 0

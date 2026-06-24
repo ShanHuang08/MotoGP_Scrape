@@ -34,6 +34,7 @@ import os
 import re
 import subprocess
 import sys
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 
@@ -281,6 +282,16 @@ def open_report_in_chrome(path: str | Path) -> bool:
     opener = "open" if sys.platform == "darwin" else "xdg-open"
     subprocess.Popen([opener, file_url])
     return True
+
+
+def open_url_in_chrome(url: str) -> bool:
+    """Open a URL with Chrome when available, otherwise use the default browser."""
+    chrome_path = _find_chrome()
+    if chrome_path:
+        subprocess.Popen([str(chrome_path), url])
+        return True
+
+    return webbrowser.open(url)
 
 
 def _render_markdown_table(table_lines: list[str], *, article_ids: dict[int, str] | None = None) -> str:

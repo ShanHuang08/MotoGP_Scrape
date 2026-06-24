@@ -17,6 +17,8 @@ python -m pip install -r requirements.txt --target .deps
 $env:PYTHONPATH = "$PWD\.deps"
 ```
 
+`playwright` is included for GPone browser fallback. The scraper first tries the locally installed Chrome browser, so a separate Playwright browser download is usually not required. If Chrome is not installed, run `python -m playwright install chromium` once after installing the requirements.
+
 ## Run
 
 ```powershell
@@ -155,7 +157,7 @@ Each configured source is tried in order:
 4. If one group doesn't have enough, overflow goes to the other
 5. Final result is re-sorted by time
 
-Article body fetching normally does **not** rebalance the selected news list. For example, if `--limit 20` selects six GPone articles and one of those pages is blocked later, that blocked article simply has no body in the article section.
+When article bodies are fetched, the final table is built from successfully extracted articles so the table and article sections stay aligned. If a selected GPone article is still blocked after fallback, it is removed from both the table and the article section.
 
 There is one lightweight backfill guard for widespread blocking: if fewer than 75% of the requested article bodies are fetched successfully, the CLI asks for a slightly larger candidate list and attempts to add up to 20% more successful article bodies. With `--limit 20`, this means fewer than 15 successful bodies triggers up to four backfill articles.
 
@@ -167,7 +169,7 @@ There is one lightweight backfill guard for widespread blocking: if fewer than 7
 4. **lxml paragraph fallback**: extracts long `<p>` paragraphs from `<article>`/`<main>`/`<p>`
 5. **Motorsport.com cleanup**: strips photo galleries, subscription prompts, and comment sections from extracted text
 
-Bot-protection pages are filtered before they reach the report. Common markers such as `Just a moment...` and `Enable JavaScript and cookies to continue` are treated as `blocked-page`, so the CLI logs a warning and continues with the remaining selected articles.
+Bot-protection pages are filtered before they reach the report. Common markers such as `Just a moment...` and `Enable JavaScript and cookies to continue` are treated as `blocked-page`. For GPone articles, the scraper then tries a Playwright browser fallback using a persistent local browser profile (`.gpone_browser_profile/`). If the browser fallback still cannot recover the article, the CLI logs a warning and continues with the remaining selected articles.
 
 ### Timezone Handling
 

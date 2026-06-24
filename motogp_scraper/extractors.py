@@ -381,9 +381,6 @@ def extract_article_with_lxml_fallback(markup: str) -> ExtractedContent | None:
 # 4. 回傳空字串 method="empty"
 # ============================================================
 def extract_article_text(markup: str, *, url: str | None = None) -> ExtractedContent:
-    if is_blocked_page(markup):
-        return ExtractedContent(text="", method="blocked-page")
-
     if url:
         host = urlparse(url).netloc
         # GPone 的主文不適合完全依賴 trafilatura，優先使用站內固定 section 結構。
@@ -395,6 +392,9 @@ def extract_article_text(markup: str, *, url: str | None = None) -> ExtractedCon
             the_race_extracted = extract_the_race_article_section(markup)
             if the_race_extracted:
                 return the_race_extracted
+
+    if is_blocked_page(markup):
+        return ExtractedContent(text="", method="blocked-page")
 
     extracted = extract_article_with_trafilatura(markup, url=url)
     if extracted:
