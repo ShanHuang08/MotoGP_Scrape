@@ -37,6 +37,7 @@ import sys
 import webbrowser
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 # 預設報告輸出目錄
@@ -81,6 +82,8 @@ def build_report_html(markdown: str, *, title: str = "MotoGP Latest News") -> st
             '  <meta charset="utf-8">',
             '  <meta name="viewport" content="width=device-width, initial-scale=1">',
             f"  <title>{escaped_title}</title>",
+            '  <link rel="icon" type="image/png" sizes="16x16" href="https://static.dorna.com/assets/logos/mgp/brand/mgp-favicon-16x16.png">',
+            '  <link rel="icon" type="image/png" sizes="32x32" href="https://static.dorna.com/assets/logos/mgp/brand/mgp-favicon-32x32.png">',
             "  <style>",
             _report_css(),
             "  </style>",
@@ -120,6 +123,7 @@ def markdown_report_to_html(markdown: str) -> str:
     current_article_index: int | None = None
     # 追蹤文章內文 div 是否已開啟，用來包裹內文段落（供複製功能使用）
     body_div_open = False
+    current_article_url = ""
 
     while index < len(lines):
         line = lines[index].rstrip()
@@ -173,6 +177,7 @@ def markdown_report_to_html(markdown: str) -> str:
                         '<a href="#latest-news">\u2191 Back to table</a></p>'
                     )
                 current_article_index = new_index
+                current_article_url = ""
 
             _flush_paragraph(paragraph_lines, html_parts)
             article_class = " article-heading" if article_match else ""
@@ -186,6 +191,8 @@ def markdown_report_to_html(markdown: str) -> str:
         # Source / URL / Published / Extraction 這類資訊做成 metadata 列。
         if _is_metadata_line(line):
             _flush_paragraph(paragraph_lines, html_parts)
+            if line.startswith("URL:"):
+                current_article_url = _strip_url_query(line.split(":", 1)[1].strip())
             html_parts.append(_render_metadata_line(line))
             index += 1
             continue
@@ -194,13 +201,20 @@ def markdown_report_to_html(markdown: str) -> str:
         # 如果是文章中的第一個內文段落，先插入複製按鈕，再開啟 article-body div
         if current_article_index is not None and not body_div_open:
             _flush_paragraph(paragraph_lines, html_parts)
+            escaped_url = html.escape(current_article_url, quote=True)
             html_parts.append(
                 '<button class="copy-btn" onclick="copyArticleBody(this)" title="複製內文">'
                 '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" '
                 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
                 'stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>'
                 '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
-                '<span>Copy</span></button>'
+                '<span>Copy Content</span></button>'
+                f'<button class="copy-btn" onclick="copyArticleUrl(this)" title="複製連結" data-url="{escaped_url}">'
+                '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" '
+                'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+                'stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>'
+                '<path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
+                '<span>Copy URL</span></button>'
             )
             html_parts.append('<div class="article-body">')
             body_div_open = True
@@ -317,12 +331,18 @@ def _render_markdown_table(table_lines: list[str], *, article_ids: dict[int, str
             title_col_index = i
             break
 
-    header_html = "".join(f"<th>{html.escape(cell)}</th>" for cell in header_cells)
+    header_classes = [_table_column_class(cell) for cell in header_cells]
+    header_html = "".join(
+        f'<th class="{header_classes[index]}">{html.escape(cell)}</th>'
+        for index, cell in enumerate(header_cells)
+    )
+    colgroup_html = "".join(f'<col class="{column_class}">' for column_class in header_classes)
     rows_html: list[str] = []
     for row_index, row in enumerate(body_rows):
         cells = _normalize_row(row, len(header_cells))
         cell_parts: list[str] = []
         for col_index, cell in enumerate(cells):
+            column_class = header_classes[col_index]
             # Title 欄位變成錨點連結，點擊可跳轉到對應文章段落
             if (
                 title_col_index is not None
@@ -333,16 +353,17 @@ def _render_markdown_table(table_lines: list[str], *, article_ids: dict[int, str
                 article_id = article_ids[row_index + 1]
                 escaped = html.escape(cell)
                 cell_parts.append(
-                    f'<td><a href="#{article_id}" class="toc-link">{escaped}</a></td>'
+                    f'<td class="{column_class}"><a href="#{article_id}" class="toc-link">{escaped}</a></td>'
                 )
             else:
-                cell_parts.append(f"<td>{_format_table_cell(cell)}</td>")
+                cell_parts.append(f'<td class="{column_class}">{_format_table_cell(cell)}</td>')
         rows_html.append(f"<tr>{''.join(cell_parts)}</tr>")
 
     return "\n".join(
         [
             '<div class="table-wrap">',
             "<table>",
+            f"<colgroup>{colgroup_html}</colgroup>",
             f"<thead><tr>{header_html}</tr></thead>",
             f"<tbody>{''.join(rows_html)}</tbody>",
             "</table>",
@@ -387,8 +408,43 @@ def _format_table_cell(value: str) -> str:
     """表格裡如果是 URL，就直接變成可點擊連結。"""
     escaped = html.escape(value)
     if value.startswith(("http://", "https://")):
-        return f'<a href="{escaped}" target="_blank" rel="noopener noreferrer">{escaped}</a>'
+        label = html.escape(_table_url_label(value))
+        return f'<a href="{escaped}" target="_blank" rel="noopener noreferrer">{label}</a>'
     return escaped
+
+
+def _table_url_label(url: str) -> str:
+    """Return compact link text for source URLs in the HTML table."""
+    host = urlparse(url).netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+
+    if host == "es.motorsport.com":
+        return "motorsport es"
+    if host.endswith("motorsport.com"):
+        return "motorsport"
+    if host.endswith("crash.net"):
+        return "crash.net"
+    if host.endswith("gpone.com"):
+        return "GPone"
+    if host.endswith("the-race.com"):
+        return "the-race"
+    if host.endswith("motogpnews.com"):
+        return "motogpnews"
+    return host or url
+
+
+def _table_column_class(header: str) -> str:
+    normalized = header.strip().lower()
+    if normalized == "#":
+        return "col-index"
+    if normalized == "title":
+        return "col-title"
+    if normalized == "link":
+        return "col-link"
+    if normalized.startswith("published at"):
+        return "col-published"
+    return "col-generic"
 
 
 def _render_metadata_line(line: str) -> str:
@@ -443,6 +499,11 @@ def _is_table_start(lines: list[str], index: int) -> bool:
 def _is_metadata_line(line: str) -> bool:
     """判斷文章 metadata 行。"""
     return line.startswith(("Generated at:", "Source:", "URL:", "Published At", "Extraction:", "Image:"))
+
+
+def _strip_url_query(url: str) -> str:
+    """Remove query string from a URL for copying."""
+    return url.split("?", 1)[0]
 
 
 def _slugify(value: str) -> str:
@@ -553,9 +614,22 @@ def _report_css() -> str:
     }
     table {
       width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
       font-size: 14px;
       line-height: 1.45;
+    }
+    col.col-index {
+      width: 52px;
+    }
+    col.col-link {
+      width: 120px;
+    }
+    col.col-published {
+      width: 230px;
+    }
+    col.col-title {
+      width: auto;
     }
     thead {
       background: #eef2f6;
@@ -568,9 +642,19 @@ def _report_css() -> str:
     }
     th:first-child,
     td:first-child {
-      width: 52px;
       text-align: right;
       color: var(--muted);
+    }
+    th.col-published,
+    td.col-published {
+      white-space: nowrap;
+    }
+    th.col-link,
+    td.col-link {
+      white-space: nowrap;
+    }
+    td.col-title {
+      word-break: break-word;
     }
     tbody tr:nth-child(even) {
       background: #fafbfc;
@@ -720,15 +804,27 @@ def _copy_script() -> str:
       var bodyText = body.innerText.trim();
       var text = title ? title + '\\n\\n' + bodyText : bodyText;
       navigator.clipboard.writeText(text).then(function() {
-        var label = btn.querySelector('span');
-        var orig = label.textContent;
-        label.textContent = 'Copied!';
-        btn.classList.add('copied');
-        setTimeout(function() {
-          label.textContent = orig;
-          btn.classList.remove('copied');
-        }, 2000);
+        markCopied(btn);
       });
+    }
+
+    function copyArticleUrl(btn) {
+      var url = btn.getAttribute('data-url') || '';
+      if (!url) return;
+      navigator.clipboard.writeText(url).then(function() {
+        markCopied(btn);
+      });
+    }
+
+    function markCopied(btn) {
+      var label = btn.querySelector('span');
+      var orig = label.textContent;
+      label.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(function() {
+        label.textContent = orig;
+        btn.classList.remove('copied');
+      }, 2000);
     }
 
     function findArticleHeading(btn) {

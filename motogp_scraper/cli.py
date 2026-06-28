@@ -15,7 +15,7 @@ cli.py - 命令行介面（Command Line Interface）
 - main()                - 主程式入口（解析參數 → 爬蟲 → 組報告 → 存檔 → 開瀏覽器）
 
 命令行參數：
-- --limit N         : 取得多少篇新聞（預設 10）
+- --limit N         : 取得多少篇新聞（預設 20）
 - --skip-articles   : 只產生新聞列表，不下載文章內文
 - --format TYPE     : 報告輸出格式，html 或 markdown（預設 html）
 - --output-dir PATH : 報告檔存到哪個資料夾
@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import math
 import sys
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -113,6 +114,19 @@ def render_news_table(items: list[NewsItem], *, format: str = "html") -> str:
 # 每篇文章包含：標題、來源、URL、發佈時間(UTC+8)、提取方式、內文。
 # 只負責組字串並 return，不會 print。
 # ============================================================
+def format_capture_summary(items: list[NewsItem]) -> str:
+    """Return a concise source-count summary for the final captured report items."""
+    if not items:
+        return "No news captured."
+
+    counts = Counter(item.source for item in items)
+    parts = [
+        f"{count} {source} news"
+        for source, count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+    ]
+    return f"{', '.join(parts)} have been captured."
+
+
 def render_articles(articles: list[Article]) -> str:
     sections: list[str] = []
     for index, article in enumerate(articles, start=1):
@@ -167,7 +181,7 @@ def build_parser() -> argparse.ArgumentParser:
         # 自訂 HelpFormatter：加大 max_help_position 讓說明文字不會被擠到下一行
         formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=36),
     )
-    parser.add_argument("--limit", type=int, default=10, help="Number of news items to list.")
+    parser.add_argument("--limit", type=int, default=20, help="Number of news items to list.")
     parser.add_argument(
         "--skip-articles",
         action="store_true",
@@ -348,6 +362,7 @@ def main(argv: list[str] | None = None) -> int:
 
     table_items = [article.item for article in articles] if not args.skip_articles else items
     table_markdown = render_news_table(table_items, format=args.format)
+    print(f"\n[INFO] {format_capture_summary(table_items)}")
 
     generated_at = datetime.now()
     report_markdown = build_report_markdown(

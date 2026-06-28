@@ -32,15 +32,12 @@ from .datetime_utils import to_utc_plus_8
 from .extractors import extract_article_text, extract_image_url_with_lxml
 from .http_client import fetch_text
 from .models import Article, NewsItem, SourceConfig
+from .source_weights import RSS_SHARE, SOURCE_PRIORITY_DELAYS, source_article_cap
 from .sources import discover_source_items
 
 
 class BlockedArticleError(RuntimeError):
     """Raised when a fetched article is a bot-protection page, not article content."""
-
-
-# RSS 來源佔比：50% 的名額優先分配給 RSS 來源的新聞
-RSS_SHARE = 0.5
 
 
 # ============================================================
@@ -112,13 +109,21 @@ class MotoGPScraper:
         rss_items = [item for item in items if self._is_rss_item(item)]
         non_rss_items = [item for item in items if not self._is_rss_item(item)]
 
-        rss_items.sort(key=self._sort_datetime_utc8, reverse=True)
-        non_rss_items.sort(key=self._sort_datetime_utc8, reverse=True)
+        rss_items.sort(key=self._sort_selection_priority, reverse=True)
+        non_rss_items.sort(key=self._sort_selection_priority, reverse=True)
 
         rss_limit = min(len(rss_items), math.ceil(limit * RSS_SHARE))
         non_rss_limit = min(len(non_rss_items), limit - rss_limit)
-        selected = rss_items[:rss_limit] + non_rss_items[:non_rss_limit]
+        selected = self._take_with_source_caps(rss_items, count=rss_limit, report_limit=limit)
+        selected += self._take_with_source_caps(
+            non_rss_items,
+            count=non_rss_limit,
+            report_limit=limit,
+            already_selected=selected,
+        )
 
+        # First backfill pass: still respect per-source caps so lower-priority
+        # sources do not crowd out GPone, Crash.net, or Motorsport too early.
         if len(selected) < limit:
             selected_urls = {item.url.rstrip("/") for item in selected}
             overflow = [
@@ -126,11 +131,55 @@ class MotoGPScraper:
                 for item in rss_items[rss_limit:] + non_rss_items[non_rss_limit:]
                 if item.url.rstrip("/") not in selected_urls
             ]
-            overflow.sort(key=self._sort_datetime_utc8, reverse=True)
+            overflow.sort(key=self._sort_selection_priority, reverse=True)
+            selected.extend(
+                self._take_with_source_caps(
+                    overflow,
+                    count=limit - len(selected),
+                    report_limit=limit,
+                    already_selected=selected,
+                )
+            )
+
+        # Final fallback: relax the per-source caps if the capped pass could
+        # not reach the requested limit. This keeps reports from coming up short.
+        if len(selected) < limit:
+            selected_urls = {item.url.rstrip("/") for item in selected}
+            overflow = [
+                item
+                for item in rss_items + non_rss_items
+                if item.url.rstrip("/") not in selected_urls
+            ]
+            overflow.sort(key=self._sort_selection_priority, reverse=True)
             selected.extend(overflow[: limit - len(selected)])
 
         selected.sort(key=self._sort_datetime_utc8, reverse=True)
         return selected[:limit]
+
+    @classmethod
+    def _take_with_source_caps(
+        cls,
+        items: list[NewsItem],
+        *,
+        count: int,
+        report_limit: int,
+        already_selected: list[NewsItem] | None = None,
+    ) -> list[NewsItem]:
+        selected: list[NewsItem] = []
+        source_counts: dict[str, int] = {}
+        for item in already_selected or []:
+            source_counts[item.source] = source_counts.get(item.source, 0) + 1
+
+        for item in items:
+            if len(selected) >= count:
+                break
+            source_limit = source_article_cap(item.source, report_limit)
+            if source_counts.get(item.source, 0) >= source_limit:
+                continue
+            selected.append(item)
+            source_counts[item.source] = source_counts.get(item.source, 0) + 1
+
+        return selected
 
     # ============================================================
     # _is_rss_item - 判斷新聞是否來自 RSS（私有靜態方法）
@@ -150,6 +199,14 @@ class MotoGPScraper:
     def _sort_datetime_utc8(item: NewsItem) -> datetime:
         converted = to_utc_plus_8(item.published_at)
         return converted or datetime.min.replace(tzinfo=timezone.utc)
+
+    @classmethod
+    def _sort_selection_priority(cls, item: NewsItem) -> datetime:
+        base_time = cls._sort_datetime_utc8(item)
+        delay = SOURCE_PRIORITY_DELAYS.get(item.source)
+        if delay and base_time != datetime.min.replace(tzinfo=timezone.utc):
+            return base_time - delay
+        return base_time
 
     # ============================================================
     # _dedupe_by_url - 去重函數（私有靜態方法）

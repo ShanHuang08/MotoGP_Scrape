@@ -40,6 +40,12 @@ Report filenames include the run date/time and `latest news`, for example:
 
 By default the HTML report is opened in Chrome when Chrome is found. If Chrome is not found, the program falls back to the OS default opener.
 
+After scraping, the CLI prints a source summary for the final report items, for example:
+
+```text
+[INFO] 8 GPone MotoGP EN news, 7 Crash.net MotoGP news, 2 The Race MotoGP news have been captured.
+```
+
 Useful options:
 
 ```powershell
@@ -98,6 +104,7 @@ main.py（入口）
 | `extractors.py` | 從 HTML 裡「提取」連結和文章內容的工具（含各站專用清理） |
 | `sources.py` | 決定用 RSS 還是直接掃描網頁來找新聞 |
 | `runner.py` | 大總管，把所有東西串起來（含加權選取策略） |
+| `source_weights.py` | 權重調整面板（RSS 比例、低權重來源 delay、每個來源上限） |
 | `cli.py` | 使用者介面（接收指令、組報告） |
 | `reporter.py` | 排版印刷廠（把 Markdown 報告轉成漂亮 HTML 或純 .md 檔 + 開瀏覽器） |
 | `datetime_utils.py` | 時鐘（解析各種日期格式 + 統一轉成 UTC+8） |
@@ -124,11 +131,13 @@ motogp_scraper/
   report_organizer.py # Auto-organize reports into race weekend folders
   rss.py             # RSS/Atom parser
   runner.py          # MotoGPScraper workflow with weighted RSS/HTML selection
+  source_weights.py  # Human-editable RSS/source weighting and per-source caps
   sources.py         # RSS-first source discovery with HTML fallback
   translator.py      # On-demand OpenAI translation from generated Markdown reports
 tests/
   __init__.py
   conftest.py            # 共用 fixtures（make_news_item, make_article, make_extracted, make_race_entry 等）
+  test_cli.py            # format_capture_summary
   test_datetime_utils.py # parse_datetime, ensure_timezone, to_utc_plus_8
   test_runner.py         # _dedupe_by_url, _select_weighted_latest, _is_rss_item
   test_extractors.py     # normalize_url, extract_published_at_with_lxml, remove_motorsport_tail_noise, extract_article_text, clean_article_text_for_site
@@ -149,13 +158,29 @@ Each configured source is tried in order:
 
 ### Weighted Selection
 
-`MotoGPScraper.latest_news()` uses a weighted selection strategy (`RSS_SHARE = 0.5`):
+`MotoGPScraper.latest_news()` uses a weighted selection strategy configured in `motogp_scraper/source_weights.py`:
 
 1. Split items into RSS-sourced and HTML-sourced groups
-2. Sort each group by publish time (UTC+8), newest first
-3. Allocate 50% of the limit to RSS items, the rest to HTML items
+2. Sort each group by publish time (UTC+8), newest first, with source-specific priority delays
+3. Allocate `RSS_SHARE = 0.5` of the limit to RSS items, the rest to HTML items
 4. If one group doesn't have enough, overflow goes to the other
-5. Final result is re-sorted by time
+5. Apply per-source caps for lower-priority sources
+6. Final result is re-sorted by real publish time for display
+
+Current source priority rules:
+
+| Group | Higher priority | Lower priority |
+|-------|-----------------|----------------|
+| RSS sources | Crash.net, Motorsport.com | MotoGPNews |
+| HTML sources | GPone | The Race |
+
+`MotoGPNews` and `The Race MotoGP` remain eligible, but they have an 8-hour priority delay and source caps:
+
+| Report limit | MotoGPNews cap | The Race cap |
+|--------------|----------------|--------------|
+| 10 or less | 1 | 1 |
+| 11-19 | 2 | 2 |
+| 20 or more | 3 | 3 |
 
 When article bodies are fetched, the final table is built from successfully extracted articles so the table and article sections stay aligned. If a selected GPone article is still blocked after fallback, it is removed from both the table and the article section.
 
@@ -165,9 +190,10 @@ There is one lightweight backfill guard for widespread blocking: if fewer than 7
 
 1. **GPone** (site-specific): dedicated XPath targeting `article/div/section/div` nodes
 2. **The Race** (site-specific): dedicated article `section` extraction, excluding embedded latest-stories blocks
-3. **trafilatura** (default): intelligent main-content extraction, filters ads and navbars
-4. **lxml paragraph fallback**: extracts long `<p>` paragraphs from `<article>`/`<main>`/`<p>`
-5. **Motorsport.com cleanup**: strips photo galleries, subscription prompts, and comment sections from extracted text
+3. **MotoGPNews** (site-specific): extracts `article[id^="post-"]` direct body headings/paragraphs and skips related widgets, read-more blocks, newsletters, and tags
+4. **trafilatura** (default): intelligent main-content extraction, filters ads and navbars
+5. **lxml paragraph fallback**: extracts long `<p>` paragraphs from `<article>`/`<main>`/`<p>`
+6. **Motorsport.com cleanup**: strips photo galleries, subscription prompts, and comment sections from extracted text
 
 Bot-protection pages are filtered before they reach the report. Common markers such as `Just a moment...` and `Enable JavaScript and cookies to continue` are treated as `blocked-page`. For GPone articles, the scraper then tries a Playwright browser fallback using a persistent local browser profile (`.gpone_browser_profile/`). If the browser fallback still cannot recover the article, the CLI logs a warning and continues with the remaining selected articles.
 
@@ -185,6 +211,13 @@ The report pipeline writes two output formats on each scrape:
 3. `reporter.build_report_html()` converts Markdown to a styled HTML page with embedded CSS
 4. `reporter.write_report()` saves the HTML file (UTF-8 with BOM for Windows compatibility)
 5. `reporter.open_report_in_chrome()` opens the report in Chrome (or OS default)
+
+HTML report UI details:
+
+- The browser tab uses MotoGP favicon PNGs from `static.dorna.com`.
+- The table `Link` column keeps the original URL as the hyperlink target but displays compact source labels such as `crash.net`, `GPone`, `the-race`, `motogpnews`, `motorsport`, and `motorsport es`.
+- The table uses fixed widths for `#`, `Link`, and `Published At (UTC+8)` so the publish timestamp stays on one line; the `Title` column receives the remaining width.
+- Each article section has `Copy` and `Copy URL` buttons. `Copy URL` strips query strings before copying, so RSS tracking parameters are not copied.
 
 **Markdown：**
 1. `cli.py` renders a Markdown table + article sections（表格 Link 欄位使用 `[link](url)` 格式）
@@ -210,6 +243,7 @@ Use `--no-organize` to disable this behavior.
 
 | 測試檔案 | 測試範圍 |
 |----------|----------|
+| `test_cli.py` | `format_capture_summary()` |
 | `test_datetime_utils.py` | `parse_datetime()`、`ensure_timezone()`、`to_utc_plus_8()` |
 | `test_runner.py` | `_dedupe_by_url()`、`_select_weighted_latest()`、`_is_rss_item()` |
 | `test_extractors.py` | `normalize_url()`、`extract_published_at_with_lxml()`、`remove_motorsport_tail_noise()`、`extract_article_text()`、`clean_article_text_for_site()` |
@@ -253,6 +287,7 @@ pytest tests/ -v
 | GPone MotoGP IT | No | Primary | Europe/Rome |
 | GPone MotoGP ES | No | Primary | Europe/Madrid |
 | The Race MotoGP | No | Primary | Europe/London |
+| MotoGPNews | Yes | Backup | Europe/London |
 | Motorsport.com MotoGP | Yes | Backup | UTC |
 | Motorsport.com ES MotoGP | Yes | Backup | Europe/Madrid |
 

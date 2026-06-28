@@ -539,6 +539,38 @@ class TestExtractArticleText:
         assert "Technical background" in result.text
         assert "Recommended story" not in result.text
 
+    def test_motogpnews_url_uses_article_extractor(self) -> None:
+        html = """
+        <html><body>
+        <main id="main-content">
+          <div></div><div></div><div></div>
+          <div>
+            <div>
+              <article id="post-99999">
+                <section>Talking point should not appear.</section>
+                <p>First MotoGPNews paragraph with useful article text.</p>
+                <ul><li>Read more should not appear.</li></ul>
+                <h2>Important MotoGPNews subheading</h2>
+                <p>Second MotoGPNews paragraph with more useful details.</p>
+                <div>Newsletter should not appear.</div>
+              </article>
+            </div>
+          </div>
+        </main>
+        </body></html>
+        """
+        result = extract_article_text(
+            html,
+            url="https://www.motogpnews.com/2026/06/26/example-story/",
+        )
+        assert result.method == "motogpnews-lxml-article"
+        assert "First MotoGPNews paragraph" in result.text
+        assert "Important MotoGPNews subheading" in result.text
+        assert "Second MotoGPNews paragraph" in result.text
+        assert "Talking point" not in result.text
+        assert "Read more" not in result.text
+        assert "Newsletter" not in result.text
+
 
 # ============================================================
 # clean_article_text_for_site 測試

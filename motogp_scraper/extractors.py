@@ -152,7 +152,10 @@ def extract_image_url_with_lxml(markup: str, *, base_url: str) -> str | None:
     elif "the-race.com" in host:
         site_xpaths = ("//*[@id='lt-user-email']/div[1]/main/article/header/figure/img",)
     elif "motorsport.com" in host:
-        site_xpaths = ("//*[@id='main-content']/div[3]/article/div/div/div[2]/div[1]/picture/img",)
+        site_xpaths = (
+            "//*[@id='main-content']/div[3]/article/div/div/div[2]/div[1]/picture/img",
+            "//*[@id='main-content']//article//picture/img",
+        )
     else:
         site_xpaths = ()
 
@@ -349,6 +352,27 @@ def extract_the_race_article_section(markup: str) -> ExtractedContent | None:
     return ExtractedContent(text=body, method="the-race-lxml-section")
 
 
+def extract_motogpnews_article(markup: str) -> ExtractedContent | None:
+    """Extract MotoGPNews body from article[id^='post-'] without related/newsletter blocks."""
+    document = parse_html_document(markup)
+    article_nodes = document.xpath("//*[@id='main-content']/div[4]//*[starts-with(@id, 'post-')]")
+    if not article_nodes:
+        article_nodes = document.xpath("//article[starts-with(@id, 'post-')]")
+    if not article_nodes:
+        return None
+
+    paragraphs: list[str] = []
+    for node in article_nodes[0].xpath("./p | ./h2 | ./h3 | ./blockquote"):
+        text = " ".join(node.text_content().split())
+        if text and text not in paragraphs:
+            paragraphs.append(text)
+
+    body = "\n\n".join(paragraphs).strip()
+    if not body:
+        return None
+    return ExtractedContent(text=body, method="motogpnews-lxml-article")
+
+
 def can_extract_with_trafilatura(markup: str, *, url: str | None = None) -> bool:
     extracted = extract_article_with_trafilatura(markup, url=url)
     return bool(extracted and extracted.text)
@@ -392,6 +416,10 @@ def extract_article_text(markup: str, *, url: str | None = None) -> ExtractedCon
             the_race_extracted = extract_the_race_article_section(markup)
             if the_race_extracted:
                 return the_race_extracted
+        if "motogpnews.com" in host:
+            motogpnews_extracted = extract_motogpnews_article(markup)
+            if motogpnews_extracted:
+                return motogpnews_extracted
 
     if is_blocked_page(markup):
         return ExtractedContent(text="", method="blocked-page")

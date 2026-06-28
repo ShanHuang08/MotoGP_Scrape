@@ -87,6 +87,21 @@ DEFAULT_SOURCES: tuple[SourceConfig, ...] = (
     ),
     # ---- 來源 3: Motorsport.com MotoGP（英文版）----
     SourceConfig(
+        name="MotoGPNews",
+        listing_url="https://www.motogpnews.com/news/",
+        rss_url="https://www.motogpnews.com/news/feed/",
+        article_link_xpaths=(
+            "//a[contains(@href, 'motogpnews.com/20')]/@href",
+        ),
+        title_xpaths=(
+            "//*[@id='hero-header']/div[3]/h1",
+            "//main//article//h1",
+            "//h1",
+        ),
+        max_listing_links=12,
+        timezone_name="Europe/London",
+    ),
+    SourceConfig(
         name="Motorsport.com MotoGP",
         listing_url="https://www.motorsport.com/motogp/news/",
         rss_url="https://www.motorsport.com/rss/motogp/news/",

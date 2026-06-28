@@ -245,6 +245,107 @@ class TestSelectWeightedLatest:
         result = scraper._select_weighted_latest(items, limit=3)
         assert len(result) == 3
 
+    def test_lower_weight_sources_are_capped_for_limit_10(
+        self, scraper: MotoGPScraper, make_news_item
+    ) -> None:
+        items = []
+        for index in range(5):
+            items.append(
+                make_news_item(
+                    f"https://motogpnews.com/{index}",
+                    source="MotoGPNews",
+                    discovery_method="rss",
+                    published_at=datetime(2024, 1, 2, index, tzinfo=timezone.utc),
+                )
+            )
+            items.append(
+                make_news_item(
+                    f"https://crash.net/{index}",
+                    source="Crash.net MotoGP",
+                    discovery_method="rss",
+                    published_at=datetime(2024, 1, 1, index, tzinfo=timezone.utc),
+                )
+            )
+            items.append(
+                make_news_item(
+                    f"https://the-race.com/{index}",
+                    source="The Race MotoGP",
+                    discovery_method="html",
+                    published_at=datetime(2024, 1, 2, index, tzinfo=timezone.utc),
+                )
+            )
+            items.append(
+                make_news_item(
+                    f"https://gpone.com/{index}",
+                    source="GPone MotoGP EN",
+                    discovery_method="html",
+                    published_at=datetime(2024, 1, 1, index, tzinfo=timezone.utc),
+                )
+            )
+
+        result = scraper._select_weighted_latest(items, limit=10)
+        assert len(result) == 10
+        assert sum(1 for item in result if item.source == "MotoGPNews") == 1
+        assert sum(1 for item in result if item.source == "The Race MotoGP") == 1
+
+    def test_lower_weight_sources_can_reach_three_for_limit_20(
+        self, scraper: MotoGPScraper, make_news_item
+    ) -> None:
+        items = []
+        for index in range(10):
+            items.append(
+                make_news_item(
+                    f"https://motogpnews.com/{index}",
+                    source="MotoGPNews",
+                    discovery_method="rss",
+                    published_at=datetime(2024, 1, 2, index, tzinfo=timezone.utc),
+                )
+            )
+            items.append(
+                make_news_item(
+                    f"https://motorsport.com/{index}",
+                    source="Motorsport.com MotoGP",
+                    discovery_method="rss",
+                    published_at=datetime(2024, 1, 1, index, tzinfo=timezone.utc),
+                )
+            )
+            items.append(
+                make_news_item(
+                    f"https://the-race.com/{index}",
+                    source="The Race MotoGP",
+                    discovery_method="html",
+                    published_at=datetime(2024, 1, 2, index, tzinfo=timezone.utc),
+                )
+            )
+            items.append(
+                make_news_item(
+                    f"https://gpone.com/{index}",
+                    source="GPone MotoGP EN",
+                    discovery_method="html",
+                    published_at=datetime(2024, 1, 1, index, tzinfo=timezone.utc),
+                )
+            )
+
+        result = scraper._select_weighted_latest(items, limit=20)
+        assert len(result) == 20
+        assert sum(1 for item in result if item.source == "MotoGPNews") == 3
+        assert sum(1 for item in result if item.source == "The Race MotoGP") == 3
+
+    def test_low_weight_source_without_date_does_not_overflow(
+        self, scraper: MotoGPScraper
+    ) -> None:
+        item = NewsItem(
+            source="The Race MotoGP",
+            title="No date",
+            url="https://www.the-race.com/motogp/no-date/",
+            published_at=None,
+            raw_meta={"discovery_method": "html"},
+        )
+
+        assert scraper._sort_selection_priority(item) == datetime.min.replace(
+            tzinfo=timezone.utc
+        )
+
 
 # ============================================================
 # _is_rss_item 測試

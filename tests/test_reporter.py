@@ -18,6 +18,8 @@ import pytest
 from motogp_scraper.reporter import (
     _split_markdown_table_row,
     _normalize_row,
+    _format_table_cell,
+    build_report_html,
 )
 
 
@@ -139,3 +141,57 @@ class TestNormalizeRow:
     def test_normalize_length(self, row: list[str], width: int, expected_len: int) -> None:
         """參數化測試：normalize 後長度一定等於 width"""
         assert len(_normalize_row(row, width)) == expected_len
+
+
+def test_table_url_cell_uses_source_label() -> None:
+    url = (
+        "https://es.motorsport.com/motogp/news/martin-vuelve-pole-position-assen-resultados-"
+        "clasificacion-motogp/10833862/?utm_source=RSS&utm_medium=referral"
+    )
+
+    rendered = _format_table_cell(url)
+
+    assert 'href="https://es.motorsport.com/motogp/news/' in rendered
+    assert "utm_source=RSS&amp;utm_medium=referral" in rendered
+    assert ">motorsport es</a>" in rendered
+    assert "utm_source=RSS" not in rendered.split(">", 1)[1]
+
+
+def test_html_table_has_compact_link_and_single_line_published_column() -> None:
+    markdown = """
+# MotoGP Latest News
+
+Generated at: 2026-06-27T10:00:00
+
+## Latest News
+
+| # | Title | Link | Published At (UTC+8) |
+|---:|---|---|---|
+| 1 | Test title | https://www.crash.net/motogp/news/1099562/1/example | 2026-06-27T18:00:00+08:00 |
+
+## Article Text
+""".strip()
+
+    rendered = build_report_html(markdown)
+
+    assert '<col class="col-title">' in rendered
+    assert '<col class="col-link">' in rendered
+    assert '<col class="col-published">' in rendered
+    assert '<td class="col-link"><a href="https://www.crash.net/motogp/news/1099562/1/example"' in rendered
+    assert ">crash.net</a>" in rendered
+    assert 'td class="col-published"' in rendered
+
+
+def test_html_report_includes_motogp_favicons() -> None:
+    rendered = build_report_html("# MotoGP Latest News")
+
+    assert (
+        '<link rel="icon" type="image/png" sizes="16x16" '
+        'href="https://static.dorna.com/assets/logos/mgp/brand/mgp-favicon-16x16.png">'
+        in rendered
+    )
+    assert (
+        '<link rel="icon" type="image/png" sizes="32x32" '
+        'href="https://static.dorna.com/assets/logos/mgp/brand/mgp-favicon-32x32.png">'
+        in rendered
+    )

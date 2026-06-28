@@ -58,3 +58,27 @@ Article body.
     assert "article-heading" in html
     assert "replace(/^\\d+\\.\\s*/, '')" in html
     assert "title + '\\n\\n' + bodyText" in html
+
+
+def test_copy_url_button_uses_url_without_query_string() -> None:
+    markdown = """
+## 1. Test Article
+
+Source: Motorsport
+URL: https://es.motorsport.com/motogp/news/story/10833648/?utm_source=RSS&utm_medium=referral
+Published At (UTC+8): 2024-06-01T20:00:00+08:00
+Extraction: trafilatura
+Image:
+
+Article body.
+""".strip()
+
+    html = build_report_html(markdown)
+
+    assert "copyArticleUrl" in html
+    assert "Copy URL" in html
+    assert (
+        'data-url="https://es.motorsport.com/motogp/news/story/10833648/"'
+        in html
+    )
+    assert 'data-url="https://es.motorsport.com/motogp/news/story/10833648/?' not in html
