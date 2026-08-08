@@ -6,7 +6,7 @@ test_reporter.py - 報告生成器輔助函數的單元測試 (pytest)
 - _normalize_row()            : 確保每列欄位數一致
 
 執行方式：
-    python main.py --unit-test
+    gpnews --unit-test
     或
     pytest tests/test_reporter.py -v
 """

@@ -2,7 +2,7 @@
 main.py - 程式入口點
 
 這是整個 MotoGP 新聞爬蟲程式的啟動入口。
-執行方式：python main.py --limit 10
+執行方式：gpnews --limit 10
 
 流程：
 1. 從 motogp_scraper.cli 匯入 main 函數

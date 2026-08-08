@@ -6,7 +6,7 @@ test_report_organizer.py - 報告整理模組的單元測試 (pytest)
 - _parse_report_date()      : 從報告檔名解析出日期
 
 執行方式：
-    python main.py --unit-test
+    gpnews --unit-test
     或
     pytest tests/test_report_organizer.py -v
 """

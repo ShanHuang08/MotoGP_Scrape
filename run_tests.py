@@ -7,12 +7,16 @@ run_tests.py - 單元測試執行入口 (pytest)
     python run_tests.py            # 執行所有測試
     python run_tests.py -v         # 詳細輸出模式
     或透過 CLI：
-    python main.py --unit-test     # 透過命令行介面執行
+    gpnews --unit-test             # 透過全域命令行介面執行
 """
 
 from __future__ import annotations
 
+import os
 import sys
+
+# Keep globally installed pytest plugins from affecting this project's test run.
+os.environ.setdefault("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
 
 import pytest
 

@@ -7,7 +7,7 @@ test_datetime_utils.py - 日期時間工具模組的單元測試 (pytest)
 - to_utc_plus_8()   : None / naive / aware datetime
 
 執行方式：
-    python main.py --unit-test
+    gpnews --unit-test
     或
     pytest tests/test_datetime_utils.py -v
 """

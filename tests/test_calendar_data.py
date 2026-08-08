@@ -7,7 +7,7 @@ test_calendar_data.py - 賽程行事曆模組的單元測試 (pytest)
 - MOTOGP_2026_CALENDAR     : 行事曆資料完整性驗證
 
 執行方式：
-    python main.py --unit-test
+    gpnews --unit-test
     或
     pytest tests/test_calendar_data.py -v
 """

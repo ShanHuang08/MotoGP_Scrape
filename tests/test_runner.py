@@ -7,7 +7,7 @@ test_runner.py - 爬蟲主控制器私有方法的單元測試 (pytest)
 - _is_rss_item()            : 判斷是否為 RSS 來源
 
 執行方式：
-    python main.py --unit-test
+    gpnews --unit-test
     或
     pytest tests/test_runner.py -v
 """

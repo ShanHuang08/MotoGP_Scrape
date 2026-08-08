@@ -7,7 +7,7 @@ test_extractors.py - HTML 內容提取器的單元測試 (pytest)
 - remove_motorsport_tail_noise()  : Motorsport.com 尾部雜訊截斷
 
 執行方式：
-    python main.py --unit-test
+    gpnews --unit-test
     或
     pytest tests/test_extractors.py -v
 """

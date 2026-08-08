@@ -17,7 +17,7 @@ cli.py - 命令行介面（Command Line Interface）
 命令行參數：
 - --limit N         : 取得多少篇新聞（預設 20）
 - --skip-articles   : 只產生新聞列表，不下載文章內文
-- --format TYPE     : 報告輸出格式，html 或 markdown（預設 html）
+- --format TYPE     : 舊參數，目前原文新聞報告固定輸出 HTML
 - --output-dir PATH : 報告檔存到哪個資料夾
 - --no-organize     : 不自動根據行事曆收納報告到比賽資料夾
 - --no-open         : 只寫報告檔，不自動用瀏覽器開啟（HTML 和 Markdown 都適用）
@@ -50,7 +50,6 @@ from .reporter import (
     open_report_in_chrome,
     open_url_in_chrome,
     write_report,
-    write_report_markdown,
 )
 from .translator import (
     DEFAULT_API_KEY_FILE,
@@ -177,9 +176,25 @@ def parse_article_indexes(value: str) -> list[int]:
 # ============================================================
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="gpnews",
         description="Scrape latest MotoGP news articles.",
-        # 自訂 HelpFormatter：加大 max_help_position 讓說明文字不會被擠到下一行
-        formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=36),
+        epilog=(
+            "Examples:\n"
+            "  gpnews --limit 10\n"
+            "  gpnews --limit 10 --no-open\n"
+            "  gpnews --limit 10 --skip-articles\n"
+            "  gpnews --limit 10 --output-dir reports\n"
+            "  gpnews --limit 10 --no-organize\n"
+            "  gpnews --unit-test\n"
+            "  gpnews --translate-report "
+            '"latest_news_reports\\2026-06-20 101500 latest news.md" '
+            "--translate-article 3"
+        ),
+        # 保留 examples 的換行，並加大 help 文字的對齊空間。
+        formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(
+            prog,
+            max_help_position=36,
+        ),
     )
     parser.add_argument("--limit", type=int, default=20, help="Number of news items to list.")
     parser.add_argument(
@@ -187,12 +202,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Only print the latest-news table; do not fetch article bodies.",
     )
-    # --format: 報告輸出格式，支援 html（預設）和 markdown
+    # --format: 舊參數；目前原文新聞報告固定輸出 HTML。
     parser.add_argument(
         "--format",
         choices=["html", "markdown"],
         default="html",
-        help="Report output format: html (default) or markdown.",
+        help="Deprecated for latest-news scraping; reports are written as HTML only.",
     )
     parser.add_argument(
         "--output-dir",
@@ -253,8 +268,8 @@ def build_parser() -> argparse.ArgumentParser:
 # 步驟 2：建立 MotoGPScraper，調用 latest_news() 取得新聞列表
 # 步驟 3：渲染新聞表格 Markdown 字串
 # 步驟 4：如果沒有 --skip-articles，逐個下載文章內文並渲染
-# 步驟 5：根據 --format 參數，產生 HTML 或 Markdown 報告並寫入檔案
-# 步驟 6：如果沒有 --no-open，用 Chrome 開啟報告（HTML 和 Markdown 都適用）
+# 步驟 5：產生 HTML 報告並寫入檔案
+# 步驟 6：如果沒有 --no-open，用 Chrome 開啟 HTML 報告
 # ============================================================
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
@@ -361,7 +376,7 @@ def main(argv: list[str] | None = None) -> int:
         articles_markdown = render_articles(articles)
 
     table_items = [article.item for article in articles] if not args.skip_articles else items
-    table_markdown = render_news_table(table_items, format=args.format)
+    table_markdown = render_news_table(table_items, format="html")
     print(f"\n[INFO] {format_capture_summary(table_items)}")
 
     generated_at = datetime.now()
@@ -371,20 +386,12 @@ def main(argv: list[str] | None = None) -> int:
         generated_at=generated_at,
     )
 
-    # 原文報告同時輸出 HTML（給人讀）與 Markdown（給 AI 翻譯讀）。
+    # 原文報告目前只輸出 HTML；Markdown 字串只作為 HTML renderer 的中間格式。
     html_report_path = write_report(report_markdown, output_dir=output_dir, now=generated_at)
-    markdown_report_path = write_report_markdown(
-        report_markdown, output_dir=output_dir, now=generated_at
-    )
     print(f"\nHTML report saved: {html_report_path.resolve()}")
-    print(f"Markdown report saved: {markdown_report_path.resolve()}")
 
-    report_path = markdown_report_path if args.format == "markdown" else html_report_path
-
-    # 兩種格式都自動用瀏覽器開啟（除非指定 --no-open）
-    # Markdown 檔需要有瀏覽器 Markdown 擴充套件才能正確渲染
     if not args.no_open:
-        open_report_in_chrome(report_path)
+        open_report_in_chrome(html_report_path)
 
     if gpone_attempted > 0 and gpone_fetched == 0:
         print(

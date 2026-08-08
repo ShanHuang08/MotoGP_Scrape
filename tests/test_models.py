@@ -7,7 +7,7 @@ test_models.py - 資料模型的單元測試 (pytest)
 - RaceEntry        : frozen dataclass 唯讀性 + 欄位存取
 
 執行方式：
-    python main.py --unit-test
+    gpnews --unit-test
     或
     pytest tests/test_models.py -v
 """

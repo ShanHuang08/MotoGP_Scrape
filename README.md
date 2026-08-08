@@ -21,11 +21,19 @@ $env:PYTHONPATH = "$PWD\.deps"
 
 ## Run
 
+Install the global command once (the installer adds this project's `bin` folder to your user PATH):
+
 ```powershell
-python main.py --limit 10
+.\scripts\install_gpnews_path.ps1
 ```
 
-This writes both HTML and Markdown reports under:
+Open a new PowerShell window, then run:
+
+```powershell
+gpnews --limit 10
+```
+
+This writes an HTML report under:
 
 ```text
 latest_news_reports/
@@ -35,7 +43,6 @@ Report filenames include the run date/time and `latest news`, for example:
 
 ```text
 2026-06-06 135115 latest news.html
-2026-06-06 135115 latest news.md
 ```
 
 By default the HTML report is opened in Chrome when Chrome is found. If Chrome is not found, the program falls back to the OS default opener.
@@ -50,28 +57,22 @@ Useful options:
 
 ```powershell
 # Generate the HTML file but do not open the browser
-python main.py --limit 10 --no-open
+gpnews --limit 10 --no-open
 
 # Only write the latest-news table, without fetching article bodies
-python main.py --limit 10 --skip-articles
+gpnews --limit 10 --skip-articles
 
 # Change the report folder
-python main.py --limit 10 --output-dir reports
-
-# Open the Markdown report after writing both HTML and Markdown
-python main.py --limit 10 --format markdown
+gpnews --limit 10 --output-dir reports
 
 # Disable auto-organization into race weekend folders
-python main.py --limit 10 --no-organize
-
-# Markdown-open mode with other options combined
-python main.py --limit 5 --format markdown --skip-articles --output-dir reports
+gpnews --limit 10 --no-organize
 
 # Run unit tests
-python main.py --unit-test
+gpnews --unit-test
 ```
 
-> Scraping now always writes both `.html` and `.md`. `--format` only decides which file is opened automatically.
+> Latest-news scraping currently writes HTML only. Markdown report generation is disabled for normal scrape runs.
 
 ## Quick Overview 快速理解
 
@@ -90,7 +91,7 @@ main.py（入口）
         → extractors.py（用 lxml 解析 HTML 連結，用 trafilatura 提取文章內文）
       → datetime_utils.py（日期時間解析 + 時區轉換為 UTC+8）
       → models.py（定義資料結構：NewsItem 新聞項目、Article 完整文章）
-    → reporter.py（生成報告：HTML 或 Markdown + 用 Chrome 開啟 HTML 報告）
+    → reporter.py（生成 HTML 報告 + 用 Chrome 開啟 HTML 報告）
     → translator.py（預留的翻譯功能，目前未實作）
 ```
 
@@ -106,7 +107,7 @@ main.py（入口）
 | `runner.py` | 大總管，把所有東西串起來（含加權選取策略） |
 | `source_weights.py` | 權重調整面板（RSS 比例、低權重來源 delay、每個來源上限） |
 | `cli.py` | 使用者介面（接收指令、組報告） |
-| `reporter.py` | 排版印刷廠（把 Markdown 報告轉成漂亮 HTML 或純 .md 檔 + 開瀏覽器） |
+| `reporter.py` | 排版印刷廠（把中間 Markdown 內容轉成漂亮 HTML + 開瀏覽器） |
 | `datetime_utils.py` | 時鐘（解析各種日期格式 + 統一轉成 UTC+8） |
 | `models.py` | 資料的容器（定義新聞和文章長什麼樣） |
 | `calendar_data.py` | 賽事行事曆（2026 年 22 站比賽日期和名稱） |
@@ -126,7 +127,7 @@ motogp_scraper/
   extractors.py      # Reusable lxml and trafilatura extraction helpers; site-specific cleaners
   http_client.py     # HTTP fetch layer, with Windows curl fallback
   models.py          # NewsItem and Article dataclasses
-  reporter.py        # HTML/Markdown report builder, CSS styling, Chrome/browser opener
+  reporter.py        # HTML report builder, CSS styling, Chrome/browser opener
   calendar_data.py    # 2026 MotoGP calendar (22 rounds with dates and GP names)
   report_organizer.py # Auto-organize reports into race weekend folders
   rss.py             # RSS/Atom parser
@@ -203,7 +204,7 @@ All timestamps are converted to **UTC+8** for display. Each source declares its 
 
 ### Report Output
 
-The report pipeline writes two output formats on each scrape:
+The report pipeline writes one output format on each scrape:
 
 **HTML（預設）：**
 1. `cli.py` renders a Markdown table + article sections
@@ -218,12 +219,6 @@ HTML report UI details:
 - The table `Link` column keeps the original URL as the hyperlink target but displays compact source labels such as `crash.net`, `GPone`, `the-race`, `motogpnews`, `motorsport`, and `motorsport es`.
 - The table uses fixed widths for `#`, `Link`, and `Published At (UTC+8)` so the publish timestamp stays on one line; the `Title` column receives the remaining width.
 - Each article section has `Copy` and `Copy URL` buttons. `Copy URL` strips query strings before copying, so RSS tracking parameters are not copied.
-
-**Markdown：**
-1. `cli.py` renders a Markdown table + article sections（表格 Link 欄位使用 `[link](url)` 格式）
-2. `reporter.build_report_markdown()` assembles the full Markdown document
-3. `reporter.write_report_markdown()` saves the raw `.md` file (UTF-8)，不經過 HTML 轉換
-4. `--format markdown` only changes which output file is opened automatically
 
 ### Report Auto-Organization
 
@@ -269,7 +264,7 @@ Use `--no-organize` to disable this behavior.
 
 ```powershell
 # 透過 CLI 執行
-python main.py --unit-test
+gpnews --unit-test
 
 # 或直接執行 run_tests.py
 python run_tests.py
@@ -296,7 +291,7 @@ pytest tests/ -v
 Translations are on-demand so scraping does not spend tokens automatically. First generate a report, then choose a specific article from the generated Markdown file:
 
 ```powershell
-python main.py --translate-report "latest_news_reports\2026-06-20 101500 latest news.md" --translate-article 3
+gpnews --translate-report "latest_news_reports\2026-06-20 101500 latest news.md" --translate-article 3
 ```
 
 The translation prompt is read from `AI_translator_prompt.md`. The OpenAI API key is read from `OPENAI_API_KEY` first, then from local `API_SECRET_KEY.txt`. The secret file is ignored by git.
@@ -304,10 +299,10 @@ The translation prompt is read from `AI_translator_prompt.md`. The OpenAI API ke
 Useful options:
 
 ```powershell
-python main.py --translate-report "report.md" --translate-article 3 --translate-model gpt-5
-python main.py --translate-report "report.md" --translate-article 2,5,7,14
-python main.py --translate-report "report.md" --translate-article 3 --translation-output-dir translated_reports
-python main.py --translate-report "report.md" --translate-article 3 --no-open
+gpnews --translate-report "report.md" --translate-article 3 --translate-model gpt-5
+gpnews --translate-report "report.md" --translate-article 2,5,7,14
+gpnews --translate-report "report.md" --translate-article 3 --translation-output-dir translated_reports
+gpnews --translate-report "report.md" --translate-article 3 --no-open
 ```
 
 Translation output is HTML only. When multiple article numbers are provided, each article is translated with a separate API call and combined into one HTML file.
