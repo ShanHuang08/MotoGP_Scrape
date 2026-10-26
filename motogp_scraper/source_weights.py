@@ -23,6 +23,7 @@ SOURCE_PRIORITY_DELAYS = {
 # of these sources to one article. For a 20-article report, allow up to three if
 # their articles are recent enough.
 SOURCE_CAPS_BY_REPORT_LIMIT = {
+    "MotoSan MotoGP": ((19, 1), (999, 2)),
     "MotoGPNews": (
         (10, 1),
         (19, 2),
@@ -42,4 +43,3 @@ def source_article_cap(source_name: str, report_limit: int) -> int:
         if report_limit <= max_report_limit:
             return cap
     return report_limit
-

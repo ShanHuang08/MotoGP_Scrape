@@ -153,6 +153,30 @@ class MotoGPScraper:
             overflow.sort(key=self._sort_selection_priority, reverse=True)
             selected.extend(overflow[: limit - len(selected)])
 
+        # MotoSan 在 20 篇報告保留一席，最多兩篇；選最新文章並保持時間排序。
+        motosan = sorted(
+            (item for item in items if item.source == "MotoSan MotoGP"),
+            key=self._sort_datetime_utc8, reverse=True,
+        )
+        cap = source_article_cap("MotoSan MotoGP", limit)
+        allowed_urls = {item.url for item in motosan[:cap]}
+        selected = [item for item in selected
+                    if item.source != "MotoSan MotoGP" or item.url in allowed_urls]
+        if limit >= 20 and motosan and not any(item.source == "MotoSan MotoGP" for item in selected):
+            if len(selected) >= limit:
+                # 優先替換同池最舊的一篇，維持原本 RSS 與 HTML 的比例。
+                same_pool = [item for item in selected
+                             if self._is_rss_item(item) == self._is_rss_item(motosan[0])]
+                selected.remove(min(same_pool or selected, key=self._sort_datetime_utc8))
+            selected.append(motosan[0])
+        for candidate in sorted(items, key=self._sort_datetime_utc8, reverse=True):
+            if len(selected) >= limit:
+                break
+            if candidate in selected:
+                continue
+            if candidate.source == "MotoSan MotoGP" and candidate.url not in allowed_urls:
+                continue
+            selected.append(candidate)
         selected.sort(key=self._sort_datetime_utc8, reverse=True)
         return selected[:limit]
 

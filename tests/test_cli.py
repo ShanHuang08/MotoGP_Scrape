@@ -27,14 +27,22 @@ def test_cli_help_uses_global_command_name() -> None:
     help_text = build_parser().format_help()
 
     assert help_text.startswith("usage: gpnews")
-    assert "Examples:\n  gpnews --limit 10" in help_text
+    assert "[-l LIMIT]" in help_text
+    assert "Examples:\n  gpnews -l 10" in help_text
     assert "python main.py" not in help_text
+
+
+def test_limit_short_option_matches_long_option() -> None:
+    parser = build_parser()
+
+    assert parser.parse_args(["-l", "7"]).limit == 7
+    assert parser.parse_args(["--limit", "7"]).limit == 7
 
 
 def test_cli_help_examples_are_valid_dry_runs() -> None:
     parser = build_parser()
     example_arguments = [
-        ["--limit", "10"],
+        ["-l", "10"],
         ["--limit", "10", "--no-open"],
         ["--limit", "10", "--skip-articles"],
         ["--limit", "10", "--output-dir", "reports"],

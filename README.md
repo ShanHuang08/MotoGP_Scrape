@@ -30,8 +30,10 @@ Install the global command once (the installer adds this project's `bin` folder 
 Open a new PowerShell window, then run:
 
 ```powershell
-gpnews --limit 10
+gpnews -l 10
 ```
+
+`-l` is the short form of `--limit`, so `gpnews -l 10` and `gpnews --limit 10` are equivalent.
 
 This writes an HTML report under:
 
@@ -57,10 +59,10 @@ Useful options:
 
 ```powershell
 # Generate the HTML file but do not open the browser
-gpnews --limit 10 --no-open
+gpnews -l 10 --no-open
 
 # Only write the latest-news table, without fetching article bodies
-gpnews --limit 10 --skip-articles
+gpnews -l 10 --skip-articles
 
 # Change the report folder
 gpnews --limit 10 --output-dir reports
@@ -306,3 +308,14 @@ gpnews --translate-report "report.md" --translate-article 3 --no-open
 ```
 
 Translation output is HTML only. When multiple article numbers are provided, each article is translated with a separate API call and combined into one HTML file.
+
+### MotoSan 新聞來源
+
+MotoSan 優先讀取 MotoGP 分類 RSS：
+https://www.motosan.es/articulos/motogp/feed/
+RSS 無法使用時，退回分類頁的 article 連結 XPath（最多六篇）。
+
+使用 `python main.py --limit 20` 時，有可用新聞就保留至少一篇 MotoSan，
+最多兩篇；先挑較新的文章，報告最後依 UTC+8 發布時間由新到舊排列。
+不足 20 篇的設定最多一篇。MotoSan 抓取失敗時不保證名額。
+正文保留 entry-content 的段落與小標題，作者介紹、分享區不列入正文。

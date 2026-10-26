@@ -24,6 +24,18 @@ from .models import SourceConfig
 # 4. Motorsport.com ES（西班牙文版）- 有 RSS，時區 Europe/Madrid
 # ============================================================
 DEFAULT_SOURCES: tuple[SourceConfig, ...] = (
+    # MotoSan：分類 RSS 優先，失敗時用文章連結 XPath。
+    SourceConfig(
+        name="MotoSan MotoGP",
+        listing_url="https://www.motosan.es/articulos/motogp/",
+        rss_url="https://www.motosan.es/articulos/motogp/feed/",
+        article_link_xpaths=(
+            "//*[@id='content-wrapper']//article[starts-with(@id, 'post-')]//a[@rel='bookmark' and contains(@href, '/motogp/')]/@href",
+        ),
+        title_xpaths=("//*[@id='content']/header/div/h1", "//h1"),
+        max_listing_links=6,
+        timezone_name="Europe/Madrid",
+    ),
     # ---- 來源 1: Crash.net MotoGP ----
     SourceConfig(
         name="Crash.net MotoGP",

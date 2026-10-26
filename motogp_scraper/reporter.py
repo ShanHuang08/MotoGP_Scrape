@@ -427,6 +427,8 @@ def _table_url_label(url: str) -> str:
         return "crash.net"
     if host.endswith("gpone.com"):
         return "GPone"
+    if host in {"motosan.es", "www.motosan.es"}:
+        return "MotoSan"
     if host.endswith("the-race.com"):
         return "the-race"
     if host.endswith("motogpnews.com"):

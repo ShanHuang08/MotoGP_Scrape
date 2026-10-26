@@ -15,7 +15,7 @@ cli.py - 命令行介面（Command Line Interface）
 - main()                - 主程式入口（解析參數 → 爬蟲 → 組報告 → 存檔 → 開瀏覽器）
 
 命令行參數：
-- --limit N         : 取得多少篇新聞（預設 20）
+- -l, --limit N     : 取得多少篇新聞（預設 20）
 - --skip-articles   : 只產生新聞列表，不下載文章內文
 - --format TYPE     : 舊參數，目前原文新聞報告固定輸出 HTML
 - --output-dir PATH : 報告檔存到哪個資料夾
@@ -180,7 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Scrape latest MotoGP news articles.",
         epilog=(
             "Examples:\n"
-            "  gpnews --limit 10\n"
+            "  gpnews -l 10\n"
             "  gpnews --limit 10 --no-open\n"
             "  gpnews --limit 10 --skip-articles\n"
             "  gpnews --limit 10 --output-dir reports\n"
@@ -196,7 +196,13 @@ def build_parser() -> argparse.ArgumentParser:
             max_help_position=36,
         ),
     )
-    parser.add_argument("--limit", type=int, default=20, help="Number of news items to list.")
+    parser.add_argument(
+        "-l",
+        "--limit",
+        type=int,
+        default=20,
+        help="Number of news items to list.",
+    )
     parser.add_argument(
         "--skip-articles",
         action="store_true",

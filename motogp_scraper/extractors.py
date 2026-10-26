@@ -145,7 +145,9 @@ def extract_image_url_with_lxml(markup: str, *, base_url: str) -> str | None:
     document = parse_html_document(markup)
     host = urlparse(base_url).netloc.lower()
 
-    if "crash.net" in host:
+    if host in {"motosan.es", "www.motosan.es"}:
+        site_xpaths = ("//*[@id='content-wrapper']/div/div[1]/img",)
+    elif "crash.net" in host:
         site_xpaths = ("//*[@id='lbs-content']/div[1]/div[1]/div/figure/picture/img",)
     elif "gpone.com" in host:
         site_xpaths = ("//*[@id='block-gpone-content']/article/figure/a/picture/img",)
@@ -373,6 +375,33 @@ def extract_motogpnews_article(markup: str) -> ExtractedContent | None:
     return ExtractedContent(text=body, method="motogpnews-lxml-article")
 
 
+def extract_motosan_article(markup: str) -> ExtractedContent | None:
+    """保留正文直屬段落與小標，遇到作者介紹或底部分享區停止。"""
+    document = parse_html_document(markup)
+    roots = document.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' entry-content ')]")
+    if not roots:
+        return None
+    paragraphs: list[str] = []
+    for node in roots[0].iterdescendants():
+        classes = set((node.get("class") or "").split())
+        if classes & {"saboxplugin-wrap", "addtoany_content_bottom"}:
+            break
+        # 排除巢狀廣告、圖說和推薦區塊，只擷取文章層級的文字。
+        if node.getparent() is roots[0] and node.tag in {"p", "h2", "h3", "blockquote", "ul", "ol"}:
+            text = " ".join(node.text_content().split())
+            if text:
+                paragraphs.append(text)
+    # 只移除 Google 追蹤宣傳句；允許愛心符號、換行及連結標籤造成的空白差異。
+    body = "\n\n".join(paragraphs)
+    promotion = (
+        r"¿TE\s+GUSTAN\s+LAS\s+MOTOS\s*[❤\ufe0f]*\s*\?\s*"
+        r"Pídele\s+aquí\s+a\s+Google\s+que\s+te\s+enseñe\s+más\s+de\s+Motosan\s+"
+        r"para\s+tener\s+siempre\s+las\s+últimas\s+noticias\."
+    )
+    body = re.sub(promotion, "", body, flags=re.IGNORECASE).strip()
+    return ExtractedContent(text=body, method="motosan-lxml-article")
+
+
 def can_extract_with_trafilatura(markup: str, *, url: str | None = None) -> bool:
     extracted = extract_article_with_trafilatura(markup, url=url)
     return bool(extracted and extracted.text)
@@ -407,6 +436,10 @@ def extract_article_with_lxml_fallback(markup: str) -> ExtractedContent | None:
 def extract_article_text(markup: str, *, url: str | None = None) -> ExtractedContent:
     if url:
         host = urlparse(url).netloc
+        if host.lower() in {"motosan.es", "www.motosan.es"}:
+            motosan_extracted = extract_motosan_article(markup)
+            if motosan_extracted is not None:
+                return motosan_extracted
         # GPone 的主文不適合完全依賴 trafilatura，優先使用站內固定 section 結構。
         if "gpone.com" in host:
             gpone_extracted = extract_gpone_article_sections(markup)
