@@ -113,3 +113,4 @@ class RaceEntry:
     date: date              # 比賽日期
     grand_prix: str         # 大獎賽全名
     country: str            # 國家名稱
+    circuit: str | None = None  # 賽道與城市；選填以相容既有年度資料

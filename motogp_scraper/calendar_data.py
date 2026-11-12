@@ -1,7 +1,7 @@
 """
-calendar_data.py - 2026 MotoGP 賽程行事曆
+calendar_data.py - MotoGP 多年度賽程行事曆
 
-儲存 2026 年賽季所有 22 站的比賽資訊，供 report_organizer.py 使用。
+儲存 2026 與 2027 年賽季的比賽資訊，供 report_organizer.py 使用。
 資料結構 RaceEntry 定義在 models.py，本檔案只負責存放行事曆資料和查詢函數。
 
 主要函數：
@@ -48,6 +48,39 @@ MOTOGP_2026_CALENDAR: tuple[RaceEntry, ...] = (
 
 
 # ============================================================
+# 2027 年暫定賽程：依使用者提供的清單建檔，尚非最終確認版本。
+# 賽道欄位保留賽道名稱與所在城市；後續賽程異動可直接更新此表。
+MOTOGP_2027_CALENDAR: tuple[RaceEntry, ...] = (
+    RaceEntry(1, date(2027, 3, 7), "Thailand Grand Prix of Thailand", "Thailand", "Buriram International Circuit, Buriram"),
+    RaceEntry(2, date(2027, 3, 14), "Qatar Grand Prix of Qatar", "Qatar", "Lusail International Circuit, Lusail"),
+    RaceEntry(3, date(2027, 4, 4), "Brazil Grand Prix of Brazil", "Brazil", "Autódromo Internacional Ayrton Senna, Goiânia"),
+    RaceEntry(4, date(2027, 4, 11), "Argentina Grand Prix of Argentina", "Argentina", "Autódromo Oscar y Juan Gálvez, Buenos Aires"),
+    RaceEntry(5, date(2027, 4, 25), "United States Grand Prix of the United States", "United States", "Circuit of the Americas, Austin"),
+    RaceEntry(6, date(2027, 5, 9), "Spain Grand Prix of Spain", "Spain", "Circuito de Jerez, Jerez de la Frontera"),
+    RaceEntry(7, date(2027, 5, 16), "France Grand Prix of France", "France", "Bugatti Circuit, Le Mans"),
+    RaceEntry(8, date(2027, 5, 30), "Italy Grand Prix of Italy", "Italy", "Mugello Circuit, Scarperia e San Piero"),
+    RaceEntry(9, date(2027, 6, 13), "Catalonia Grand Prix of Catalonia", "Catalonia", "Circuit de Barcelona-Catalunya, Montmeló"),
+    RaceEntry(10, date(2027, 6, 27), "Netherlands Grand Prix of the Netherlands", "Netherlands", "TT Circuit Assen, Assen"),
+    RaceEntry(11, date(2027, 7, 11), "Germany Grand Prix of Germany", "Germany", "Sachsenring, Hohenstein-Ernstthal"),
+    RaceEntry(12, date(2027, 7, 18), "Czech Republic Grand Prix of Czechia", "Czech Republic", "Brno Circuit, Brno"),
+    RaceEntry(13, date(2027, 8, 15), "United Kingdom Grand Prix of Great Britain", "United Kingdom", "Silverstone Circuit, Silverstone"),
+    RaceEntry(14, date(2027, 8, 29), "Austria Grand Prix of Austria", "Austria", "Red Bull Ring, Spielberg"),
+    RaceEntry(15, date(2027, 9, 12), "San Marino Grand Prix of San Marino and the Rimini Riviera", "San Marino", "Misano World Circuit, Misano Adriatico"),
+    RaceEntry(16, date(2027, 9, 19), "Aragon Grand Prix of Aragon", "Aragon", "MotorLand Aragón, Alcañiz"),
+    RaceEntry(17, date(2027, 10, 3), "Portugal Grand Prix of Portugal", "Portugal", "Algarve International Circuit, Portimão"),
+    RaceEntry(18, date(2027, 10, 17), "Japan Grand Prix of Japan", "Japan", "Motegi Circuit, Motegi"),
+    RaceEntry(19, date(2027, 10, 24), "Malaysia Grand Prix of Malaysia", "Malaysia", "Sepang International Circuit, Sepang"),
+    RaceEntry(20, date(2027, 10, 31), "Indonesia Grand Prix of Indonesia", "Indonesia", "Mandalika International Street Circuit, Mandalika"),
+    RaceEntry(21, date(2027, 11, 14), "Australia Red Bull Grand Prix of Australia", "Australia", "Adelaide Street Circuit, Adelaide"),
+    RaceEntry(22, date(2027, 11, 28), "Valencian Community Grand Prix of Valencia", "Valencian Community", "Circuit Ricardo Tormo, Valencia"),
+)
+
+# 合併各年度並依日期排序，保留等距時優先較早賽站的既有行為。
+MOTOGP_CALENDAR: tuple[RaceEntry, ...] = tuple(sorted(
+    MOTOGP_2026_CALENDAR + MOTOGP_2027_CALENDAR, key=lambda race: race.date,
+))
+
+
 # find_race_nearby - 檢查指定日期是否在某站比賽的窗口範圍內
 # ============================================================
 # 參數：
@@ -69,7 +102,7 @@ def find_race_nearby(
     best_race: RaceEntry | None = None
     best_distance: int = window_days + 1  # 初始化為超出窗口的值
 
-    for race in MOTOGP_2026_CALENDAR:
+    for race in MOTOGP_CALENDAR:
         distance = abs((target_date - race.date).days)
         if distance <= window_days and distance < best_distance:
             best_race = race
