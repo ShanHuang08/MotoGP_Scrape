@@ -316,6 +316,11 @@ def extract_gpone_article_sections(markup: str) -> ExtractedContent | None:
     paragraphs: list[str] = []
 
     for section_node in section_nodes:
+        # Instagram 嵌入區屬於社群內容，不是記者正文；保留區塊後的文字。
+        for embed in section_node.xpath(
+            ".//*[contains(concat(' ', normalize-space(@class), ' '), ' instagram-media ')]"
+        ):
+            embed.drop_tree()
         # GPone 的大字體重點常放在 h2/strong，正文在 p；照 DOM 順序一起保留。
         content_nodes = section_node.xpath(".//h2 | .//p")
         if content_nodes:
@@ -324,6 +329,13 @@ def extract_gpone_article_sections(markup: str) -> ExtractedContent | None:
             candidates = [" ".join(section_node.text_content().split())]
 
         for candidate in candidates:
+            # 僅排除獨立署名段落，不截斷後續正文，也不限定帳號或攝影師姓名。
+            if re.match(
+                r"^(?:Un post condiviso da\s+|A post shared by\s+|"
+                r"Una publicación compartida por\s+|Photo\s*credit\s*[:@])",
+                candidate, flags=re.IGNORECASE,
+            ):
+                continue
             if candidate and candidate not in paragraphs:
                 paragraphs.append(candidate)
 
@@ -433,6 +445,23 @@ def extract_article_with_lxml_fallback(markup: str) -> ExtractedContent | None:
 # 3. lxml 段落備用
 # 4. 回傳空字串 method="empty"
 # ============================================================
+def remove_motorsport_image_blocks(markup: str) -> str:
+    """先移除圖片區塊，避免圖說與攝影署名被抽取器合併進正文。"""
+    document = parse_html_document(markup)
+    # 主圖與內文圖片的容器不同；使用網站結構，不比對車手或攝影師姓名。
+    nodes = document.xpath(
+        "//*[@data-widget='image'] | "
+        "//*[contains(concat(' ', normalize-space(@class), ' '), ' ms-entity-promo ')] | "
+        "//figcaption | //script"
+    )
+    for node in nodes:
+        # JSON-LD 的 articleBody 也含圖說，移除腳本以免備援抽取重新帶回雜訊。
+        # drop_tree 會保留節點後的 tail，避免圖片後方正文被一併刪除。
+        if node.getparent() is not None:
+            node.drop_tree()
+    return html.tostring(document, encoding="unicode")
+
+
 def extract_article_text(markup: str, *, url: str | None = None) -> ExtractedContent:
     if url:
         host = urlparse(url).netloc
@@ -457,6 +486,11 @@ def extract_article_text(markup: str, *, url: str | None = None) -> ExtractedCon
     if is_blocked_page(markup):
         return ExtractedContent(text="", method="blocked-page")
 
+    if url:
+        host = (urlparse(url).hostname or "").lower()
+        if host == "motorsport.com" or host.endswith(".motorsport.com"):
+            markup = remove_motorsport_image_blocks(markup)
+
     extracted = extract_article_with_trafilatura(markup, url=url)
     if extracted:
         return clean_article_text_for_site(extracted, url=url)
@@ -479,6 +513,17 @@ def clean_article_text_for_site(content: ExtractedContent, *, url: str | None = 
 
 def remove_motorsport_tail_noise(text: str) -> str:
     """Motorsport.com 文章後段常接照片集、留言、訂閱提示，遇到這些段落就截斷。"""
+    # 西班牙文推廣區可能被合併到正文同一行，因此用完整提示定位。
+    # 不以 Motorsport.com、comentarios 等一般單字判斷，避免誤刪新聞內容。
+    spanish_tail = re.search(
+        r"(?<!\w)(?:Comparte\s+o\s+guarda\s+este\s+artículo|"
+        r"Suscríbete\s+y\s+accede\s+a\s+Motorsport\.com|"
+        r"Desde\s+la\s+Fórmula\s+1\s+hasta\s+MotoGP,\s+informamos\s+"
+        r"directamente\s+desde\s+el\s+paddock)\b",
+        text, flags=re.IGNORECASE,
+    )
+    if spanish_tail:
+        text = text[:spanish_tail.start()].rstrip()
     stop_prefixes = (
         "Photos from ",
         "We want your opinion!",
@@ -490,6 +535,7 @@ def remove_motorsport_tail_noise(text: str) -> str:
         "Subscribe and access Motorsport.com",
         "Become a subscriber.",
         "Disable your adblocker.",
+        "Mejores comentarios",
     )
     cleaned_lines: list[str] = []
 
