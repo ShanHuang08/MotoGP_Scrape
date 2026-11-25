@@ -101,9 +101,10 @@ class TestFetchArticle:
         self, scraper: MotoGPScraper, make_news_item, monkeypatch
     ) -> None:
         fallback_html = """
-        <html><body>
+        <html><head><title>GPone</title></head><body>
         <div id="block-gpone-content">
             <article><div>
+                <h1>Ducati and Aprilia battle for the constructors' title</h1>
                 <section><div></div><div><p>Recovered GPone article body.</p></div></section>
             </div></article>
         </div>
@@ -121,7 +122,11 @@ class TestFetchArticle:
         item.raw_meta["article_markup"] = """
         <html>
           <head><title>Just a moment...</title></head>
-          <body>Enable JavaScript and cookies to continue</body>
+          <body>Enable JavaScript and cookies to continue
+            <div id="block-gpone-content"><article><div><section><div></div>
+            <div><h1>Stale title</h1><p>Stale article fragment.</p></div>
+            </section></div></article></div>
+          </body>
         </html>
         """
 
@@ -129,6 +134,7 @@ class TestFetchArticle:
 
         assert article.extraction_method == "gpone-lxml-sections"
         assert article.text == "Recovered GPone article body."
+        assert article.item.title == "Ducati and Aprilia battle for the constructors' title"
 
 
 # ============================================================

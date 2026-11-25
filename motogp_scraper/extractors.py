@@ -124,6 +124,10 @@ def extract_links_with_lxml(
 # 先嘗試提供的 XPath，找不到則退回到 <title> 標籤。
 # ============================================================
 def extract_title_with_lxml(markup: str, xpaths: Iterable[str] = ()) -> str | None:
+    # Challenge pages can contain a stale/embedded article fragment; never use
+    # their generic page title as the article headline.
+    if is_blocked_page(markup):
+        return None
     document = parse_html_document(markup)
     for xpath in xpaths:
         values = document.xpath(xpath)
@@ -463,6 +467,11 @@ def remove_motorsport_image_blocks(markup: str) -> str:
 
 
 def extract_article_text(markup: str, *, url: str | None = None) -> ExtractedContent:
+    # Check before site-specific extractors, since stale article DOM can remain
+    # inside an interstitial page and otherwise be mistaken for a real article.
+    if is_blocked_page(markup):
+        return ExtractedContent(text="", method="blocked-page")
+
     if url:
         host = urlparse(url).netloc
         if host.lower() in {"motosan.es", "www.motosan.es"}:
@@ -482,9 +491,6 @@ def extract_article_text(markup: str, *, url: str | None = None) -> ExtractedCon
             motogpnews_extracted = extract_motogpnews_article(markup)
             if motogpnews_extracted:
                 return motogpnews_extracted
-
-    if is_blocked_page(markup):
-        return ExtractedContent(text="", method="blocked-page")
 
     if url:
         host = (urlparse(url).hostname or "").lower()

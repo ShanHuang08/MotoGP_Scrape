@@ -51,6 +51,7 @@ DEFAULT_SOURCES: tuple[SourceConfig, ...] = (
     SourceConfig(
         name="GPone MotoGP EN",
         listing_url="https://www.gpone.com/en/news/ontrack/motogp",
+        title_xpaths=("//*[@id='block-gpone-content']//h1", "//article//h1", "//h1"),
         article_link_xpaths=(
             "//a[contains(@href, '/en/news/ontrack/motogp/')]/@href",
             "//a[contains(@href, '/en/20') and contains(@href, '/motogp/')]/@href",
@@ -62,6 +63,7 @@ DEFAULT_SOURCES: tuple[SourceConfig, ...] = (
     SourceConfig(
         name="GPone MotoGP IT",
         listing_url="https://www.gpone.com/it/news/ontrack/motogp",
+        title_xpaths=("//*[@id='block-gpone-content']//h1", "//article//h1", "//h1"),
         article_link_xpaths=(
             "//a[contains(@href, '/it/news/ontrack/motogp/')]/@href",
             "//a[contains(@href, '/it/20') and contains(@href, '/motogp/')]/@href",
@@ -73,6 +75,7 @@ DEFAULT_SOURCES: tuple[SourceConfig, ...] = (
     SourceConfig(
         name="GPone MotoGP ES",
         listing_url="https://www.gpone.com/es/news/ontrack/motogp",
+        title_xpaths=("//*[@id='block-gpone-content']//h1", "//article//h1", "//h1"),
         article_link_xpaths=(
             "//a[contains(@href, '/es/news/ontrack/motogp/')]/@href",
             "//a[contains(@href, '/es/20') and contains(@href, '/motogp/')]/@href",

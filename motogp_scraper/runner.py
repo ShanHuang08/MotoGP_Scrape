@@ -23,13 +23,14 @@ from __future__ import annotations
 
 import math
 import sys
+from dataclasses import replace
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from .browser_fallback import fetch_gpone_article_with_playwright
 from .config import DEFAULT_SOURCES
 from .datetime_utils import to_utc_plus_8
-from .extractors import extract_article_text, extract_image_url_with_lxml
+from .extractors import extract_article_text, extract_image_url_with_lxml, extract_title_with_lxml
 from .http_client import fetch_text
 from .models import Article, NewsItem, SourceConfig
 from .source_weights import RSS_SHARE, SOURCE_PRIORITY_DELAYS, source_article_cap
@@ -78,6 +79,12 @@ class MotoGPScraper:
             if fallback_markup:
                 markup = fallback_markup
                 extracted = extract_article_text(markup, url=item.url)
+                recovered_title = extract_title_with_lxml(
+                    markup,
+                    ("//*[@id='block-gpone-content']//h1", "//article//h1", "//h1"),
+                )
+                if recovered_title:
+                    item = replace(item, title=recovered_title)
             if extracted.method == "blocked-page":
                 raise BlockedArticleError(f"Blocked page received for {item.url}")
         image_url = extract_image_url_with_lxml(markup, base_url=item.url)

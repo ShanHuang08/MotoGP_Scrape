@@ -23,6 +23,7 @@ from motogp_scraper.extractors import (
     extract_published_at_with_lxml,
     remove_motorsport_tail_noise,
     extract_article_text,
+    extract_title_with_lxml,
     clean_article_text_for_site,
     is_blocked_page,
 )
@@ -467,6 +468,19 @@ class TestExtractArticleText:
         """
         result = extract_article_text(html, url="https://www.gpone.com/en/news/article")
         assert result.method == "gpone-lxml-sections"
+
+    def test_gpone_challenge_page_with_stale_article_dom_is_rejected(self) -> None:
+        html = """
+        <html><head><title>Just a moment...</title></head>
+        <body>Enable JavaScript and cookies to continue
+        <div id="block-gpone-content"><article><div><section><div></div>
+        <div><h1>Real headline</h1><p>Stale article fragment.</p></div>
+        </section></div></article></div></body></html>
+        """
+        assert extract_title_with_lxml(html) is None
+        result = extract_article_text(html, url="https://www.gpone.com/it/news/article")
+        assert result.method == "blocked-page"
+        assert result.text == ""
 
     def test_gpone_extractor_includes_h2_emphasis_text(self) -> None:
         """GPone 的大字體 h2/strong 內容也要被抽進正文。"""
